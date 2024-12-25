@@ -3,6 +3,8 @@ use std::path::Path;
 use anyhow::Context;
 use clap::Args;
 
+mod ast;
+
 #[derive(Debug, Clone, Args)]
 #[group(required = false, multiple = false)]
 pub struct Options {
@@ -23,6 +25,13 @@ pub fn compiler(input: &Path, _output: &Path, options: Options) -> Result<bool, 
     println!("{tokens:#?}");
 
     if options.lex {
+        return Ok(false);
+    }
+
+    let program = ast::parse(tokens);
+    println!("{program:#?}");
+
+    if options.parse {
         return Ok(false);
     }
 
