@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::Context;
-use clap::{Args, Parser};
+use clap::Parser;
+
+use mcc::Options;
 
 #[derive(Debug, Clone, Parser)]
 struct Cli {
@@ -12,19 +14,6 @@ struct Cli {
 
     #[clap(flatten)]
     options: Options,
-}
-
-#[derive(Debug, Clone, Args)]
-#[group(required = false, multiple = false)]
-struct Options {
-    #[arg(long)]
-    lex: bool,
-
-    #[arg(long)]
-    parse: bool,
-
-    #[arg(long)]
-    codegen: bool,
 }
 
 fn main() -> Result<(), anyhow::Error> {
@@ -50,7 +39,11 @@ fn main() -> Result<(), anyhow::Error> {
     preprocessor(&cli.filepath, &preprocessed_file)?;
 
     let assembly_file = tempdir.path().join(filename).with_extension("s");
-    compiler(&preprocessed_file, &assembly_file)?;
+    let keep_going = mcc::compiler(&preprocessed_file, &assembly_file, cli.options)?;
+
+    if !keep_going {
+        return Ok(());
+    }
 
     let executable_file = basedir.join(filename).with_extension("");
     produce_executable(&assembly_file, &executable_file)?;
@@ -79,7 +72,7 @@ fn preprocessor(input: &Path, output: &Path) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-fn compiler(_input: &Path, output: &Path) -> Result<(), anyhow::Error> {
+fn dummy_compiler(_input: &Path, output: &Path) -> Result<(), anyhow::Error> {
     let mut file = File::create(output).context("failed to open file")?;
 
     #[rustfmt::skip]
