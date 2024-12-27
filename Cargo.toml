@@ -6,5 +6,4 @@ edition = "2021"
 [dependencies]
 anyhow = { version = "1.0.95", features = ["backtrace"] }
 clap = { version = "4.5.23", features = ["derive"] }
-regex = "1.11.1"
 tempfile = "3.14.0"

@@ -1,11 +1,59 @@
-use regex::Regex;
+use std::str::FromStr;
 
 pub fn run(content: &str) -> Result<Vec<Token>, anyhow::Error> {
-    let mut parser = Parser::new(content);
+    let mut chars = content.chars().peekable();
 
     let mut tokens = Vec::new();
-    while let Some(token) = parser.find_next()? {
-        tokens.push(token);
+    while let Some(c) = chars.next() {
+        match c {
+            _ if c.is_whitespace() => continue,
+
+            '(' => tokens.push(Token::OpenParenthesis),
+            ')' => tokens.push(Token::CloseParenthesis),
+            '{' => tokens.push(Token::OpenBrace),
+            '}' => tokens.push(Token::CloseBrace),
+            ';' => tokens.push(Token::Semicolon),
+
+            // If we encounter any "normal characters" then we have found an identifier
+            'a'..='z' | 'A'..='Z' | '_' => {
+                let mut extracted = String::from(c);
+
+                // Important that we allow numbers here, but not in the initial position ^
+                while let Some('a'..='z' | 'A'..='Z' | '_' | '0'..='9') = chars.peek() {
+                    let c = chars.next().unwrap();
+                    extracted.push(c);
+                }
+
+                let token = match extracted.parse::<Keyword>() {
+                    Ok(keyword) => Token::Keyword(keyword),
+                    Err(()) => Token::Identifier(extracted),
+                };
+
+                tokens.push(token);
+            }
+
+            '0'..='9' => {
+                let mut extracted = String::from(c);
+                loop {
+                    match chars.peek() {
+                        Some('0'..='9') => {
+                            let c = chars.next().unwrap();
+                            extracted.push(c);
+                        }
+
+                        Some(' ' | ';' | '(' | ')') | None => break,
+                        Some(c) if c.is_whitespace() => break,
+
+                        Some(c) => return Err(anyhow::anyhow!("Bad token found: {c}")),
+                    }
+                }
+
+                let parsed: i64 = extracted.parse().unwrap();
+                tokens.push(Token::Constant(parsed));
+            }
+
+            c => return Err(anyhow::anyhow!("No matching token found for {c}")),
+        }
     }
 
     Ok(tokens)
@@ -18,6 +66,18 @@ pub enum Keyword {
     Return,
 }
 
+impl FromStr for Keyword {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "int" => Ok(Self::Int),
+            "void" => Ok(Self::Void),
+            "return" => Ok(Self::Return),
+            _ => Err(()),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Token {
     Identifier(String),
@@ -28,88 +88,4 @@ pub enum Token {
     OpenBrace,
     CloseBrace,
     Semicolon,
-}
-
-struct Parser<'s> {
-    s: &'s str,
-    identifier: Regex,
-    constant: Regex,
-}
-
-impl<'s> Parser<'s> {
-    fn new(s: &'s str) -> Self {
-        Self {
-            s,
-            identifier: Regex::new(r#"[a-zA-Z_]\w*\b"#).unwrap(),
-            constant: Regex::new(r#"[0-9]+\b"#).unwrap(),
-        }
-    }
-
-    fn find_next(&mut self) -> Result<Option<Token>, anyhow::Error> {
-        self.s = self.s.trim_start();
-
-        if self.s.is_empty() {
-            return Ok(None);
-        }
-
-        match &self.s[0..1].chars().next().unwrap() {
-            '(' => {
-                self.s = &self.s[1..];
-                Ok(Some(Token::OpenParenthesis))
-            }
-            ')' => {
-                self.s = &self.s[1..];
-                Ok(Some(Token::CloseParenthesis))
-            }
-            '{' => {
-                self.s = &self.s[1..];
-                Ok(Some(Token::OpenBrace))
-            }
-            '}' => {
-                self.s = &self.s[1..];
-                Ok(Some(Token::CloseBrace))
-            }
-            ';' => {
-                self.s = &self.s[1..];
-                Ok(Some(Token::Semicolon))
-            }
-
-            // For identifiers we use regex
-            'a'..='z' | 'A'..='Z' | '_' => {
-                let m = self.identifier.find(&self.s).unwrap();
-                let range = m.range();
-
-                assert_eq!(range.start, 0);
-
-                let end = range.end;
-                let extracted = &self.s[range];
-                self.s = &self.s[end..];
-
-                let token = match extracted {
-                    "int" => Token::Keyword(Keyword::Int),
-                    "void" => Token::Keyword(Keyword::Void),
-                    "return" => Token::Keyword(Keyword::Return),
-                    _ => Token::Identifier(extracted.to_owned()),
-                };
-                return Ok(Some(token));
-            }
-
-            // For constants we use regex
-            '0'..='9' => {
-                let m = self.constant.find(&self.s).unwrap();
-                let range = m.range();
-
-                assert_eq!(range.start, 0);
-
-                let end = range.end;
-                let extracted = &self.s[range];
-                self.s = &self.s[end..];
-
-                let parsed: i64 = extracted.parse().unwrap();
-                return Ok(Some(Token::Constant(parsed)));
-            }
-
-            c => Err(anyhow::anyhow!("No matching token found for {c}")),
-        }
-    }
 }
