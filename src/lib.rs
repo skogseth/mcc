@@ -29,7 +29,7 @@ pub fn compiler(input: &Path, _output: &Path, options: Options) -> Result<bool, 
         return Ok(false);
     }
 
-    let program = ast::parse(tokens);
+    let program = ast::parse(tokens)?;
     println!("{program:#?}");
 
     if options.parse {
