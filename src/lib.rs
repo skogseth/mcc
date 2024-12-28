@@ -20,31 +20,26 @@ pub struct Options {
     pub codegen: bool,
 }
 
-pub fn compiler(input: &Path, _output: &Path, options: Options) -> Result<bool, anyhow::Error> {
+pub fn compiler(input: &Path, output: &Path, options: Options) -> Result<bool, anyhow::Error> {
     let content = std::fs::read_to_string(input).context("failed to read input file")?;
 
     let tokens = lexer::run(&content)?;
-    println!("{tokens:#?}");
-
     if options.lex {
         return Ok(false);
     }
 
     let program = ast::parse(tokens)?;
-    println!("{program:#?}");
-
     if options.parse {
         return Ok(false);
     }
 
     let assembly = program.assembly();
-    println!("{assembly:#?}");
-
     if options.codegen {
         return Ok(false);
     }
 
-    todo!("finish compiler!");
+    let buf = format!("{assembly}");
+    std::fs::write(output, &buf[..])?;
 
     Ok(true)
 }
