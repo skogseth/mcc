@@ -3,6 +3,7 @@ use std::path::Path;
 use anyhow::Context;
 use clap::Args;
 
+mod assembly;
 mod ast;
 mod lexer;
 
@@ -33,6 +34,13 @@ pub fn compiler(input: &Path, _output: &Path, options: Options) -> Result<bool, 
     println!("{program:#?}");
 
     if options.parse {
+        return Ok(false);
+    }
+
+    let assembly = program.assembly();
+    println!("{assembly:#?}");
+
+    if options.codegen {
         return Ok(false);
     }
 

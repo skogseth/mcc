@@ -2,7 +2,7 @@ use anyhow::anyhow;
 
 use crate::lexer::{Keyword, Token};
 
-pub fn parse(tokens: Vec<Token>) -> Result<Function, anyhow::Error> {
+pub fn parse(tokens: Vec<Token>) -> Result<Program, anyhow::Error> {
     let return_type = tokens[0].clone();
     assert!(matches!(return_type, Token::Keyword(Keyword::Int)));
 
@@ -57,10 +57,14 @@ pub fn parse(tokens: Vec<Token>) -> Result<Function, anyhow::Error> {
 
     assert_eq!(statements.len(), 1);
 
-    Ok(Function {
+    assert_eq!(function_name.0.as_str(), "main");
+
+    let main = Function {
         name: function_name,
         body: statements[0].clone(),
-    })
+    };
+
+    Ok(Program(main))
 }
 
 #[derive(Debug, Clone)]
@@ -73,19 +77,25 @@ impl std::fmt::Display for Identifier {
 }
 
 #[derive(Debug, Clone)]
-pub enum Expression {
-    Constant(i64),
+pub struct Program(pub Function);
+
+impl Program {
+    pub fn assembly(self) -> crate::assembly::Program {
+        crate::assembly::Program(self.0.assembly())
+    }
 }
 
-impl Expression {
-    fn parse(tokens: &[Token]) -> Result<Self, anyhow::Error> {
-        // TODO: Support more expression types
-        match tokens {
-            [Token::Constant(i)] => Ok(Expression::Constant(*i)),
+#[derive(Debug, Clone)]
+pub struct Function {
+    name: Identifier,
+    body: Statement,
+}
 
-            _ => Err(anyhow!(
-                "sequence of tokens is not a known expression: {tokens:?}"
-            )),
+impl Function {
+    fn assembly(self) -> crate::assembly::Function {
+        crate::assembly::Function {
+            name: self.name,
+            instructions: self.body.assembly(),
         }
     }
 }
@@ -109,10 +119,36 @@ impl Statement {
             )),
         }
     }
+
+    fn assembly(self) -> Vec<crate::assembly::Instruction> {
+        match self {
+            Self::Return(Expression::Constant(i)) => {
+                vec![
+                    crate::assembly::Instruction::Mov {
+                        src: crate::assembly::Operand::Imm(i),
+                        dst: crate::assembly::Operand::Register,
+                    },
+                    crate::assembly::Instruction::Ret,
+                ]
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
-pub struct Function {
-    name: Identifier,
-    body: Statement,
+pub enum Expression {
+    Constant(i64),
+}
+
+impl Expression {
+    fn parse(tokens: &[Token]) -> Result<Self, anyhow::Error> {
+        // TODO: Support more expression types
+        match tokens {
+            [Token::Constant(i)] => Ok(Expression::Constant(*i)),
+
+            _ => Err(anyhow!(
+                "sequence of tokens is not a known expression: {tokens:?}"
+            )),
+        }
+    }
 }
