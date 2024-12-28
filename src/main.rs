@@ -72,25 +72,18 @@ fn preprocessor(input: &Path, output: &Path) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
+#[allow(unused)]
 fn dummy_compiler(_input: &Path, output: &Path) -> Result<(), anyhow::Error> {
     let mut file = File::create(output).context("failed to open file")?;
 
     #[rustfmt::skip]
     let content = String::from(
 r#"
-        	.section	__TEXT,__text,regular,pure_instructions
-	.build_version macos, 15, 0	sdk_version 15, 0
 	.globl	_main                           ## -- Begin function main
-	.p2align	4, 0x90
 _main:                                  ## @main
-## %bb.0:
-	pushq	%rbp
-	movq	%rsp, %rbp
 	movl	$2, %eax
-	popq	%rbp
-	retq
+	ret
                                         ## -- End function
-.subsections_via_symbols
 "#
     );
 
