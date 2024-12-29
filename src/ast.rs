@@ -1,71 +1,27 @@
+use std::iter::Peekable;
+use std::vec::IntoIter;
+
 use anyhow::anyhow;
 
 use crate::lexer::{Keyword, Token};
 
 pub fn parse(tokens: Vec<Token>) -> Result<Program, anyhow::Error> {
-    let return_type = tokens[0].clone();
-    assert!(matches!(return_type, Token::Keyword(Keyword::Int)));
+    let mut tokens = tokens.into_iter().peekable();
 
-    let function_name = match tokens[1].clone() {
-        Token::Identifier(s) => Identifier(s),
-        _ => return Err(anyhow!("failed to find function identifier")),
-    };
+    let main = Function::parse(&mut tokens)?;
+    assert_eq!(main.name.0.as_str(), "main");
 
-    if !matches!(tokens[2], Token::OpenParenthesis) {
+    let remaining_tokens: Vec<Token> = tokens.collect();
+    if !remaining_tokens.is_empty() {
         return Err(anyhow!(
-            "No open-parenthesis found for function {function_name}"
+            "Unexpected token(s) found after main: {remaining_tokens:?}"
         ));
     }
-
-    assert!(matches!(tokens[3], Token::Keyword(Keyword::Void)));
-
-    if !matches!(tokens[4], Token::CloseParenthesis) {
-        return Err(anyhow!(
-            "No close-parenthesis found for function {function_name}"
-        ));
-    }
-
-    if !matches!(tokens[5], Token::OpenBrace) {
-        return Err(anyhow!("No open brace found for function {function_name}"));
-    }
-
-    let body_unparsed: Vec<Token> = tokens[6..]
-        .iter()
-        .take_while(|t| !matches!(t, Token::CloseBrace))
-        .cloned()
-        .collect();
-
-    let new_len = 6 + body_unparsed.len();
-    if !matches!(tokens.get(new_len), Some(Token::CloseBrace)) {
-        return Err(anyhow!("No close brace found for function {function_name}"));
-    }
-    if let Some(t) = tokens.get(new_len + 1) {
-        return Err(anyhow!(
-            "Unexpected token found after function {function_name}: {t:?}"
-        ));
-    }
-
-    let mut statement_iter = body_unparsed.split(|token| matches!(token, Token::Semicolon));
-    if !matches!(statement_iter.next_back(), Some([])) {
-        return Err(anyhow!(
-            "body of {function_name} does not end with a semicolon"
-        ));
-    }
-    let statements: Vec<Statement> = statement_iter
-        .map(Statement::parse)
-        .collect::<Result<_, _>>()?;
-
-    assert_eq!(statements.len(), 1);
-
-    assert_eq!(function_name.0.as_str(), "main");
-
-    let main = Function {
-        name: function_name,
-        body: statements[0].clone(),
-    };
 
     Ok(Program(main))
 }
+
+pub type TokenIter<'a> = Peekable<IntoIter<Token>>;
 
 #[derive(Debug, Clone)]
 pub struct Identifier(pub String);
@@ -92,6 +48,49 @@ pub struct Function {
 }
 
 impl Function {
+    fn parse(tokens: &mut TokenIter) -> Result<Self, anyhow::Error> {
+        match tokens.next() {
+            Some(Token::Keyword(Keyword::Int)) => {}
+            Some(t) => return Err(anyhow!("expected return type, found {t:?}")),
+            None => return Err(anyhow!("no return_type found")),
+        }
+
+        let function_name = match tokens.next() {
+            Some(Token::Identifier(s)) => Identifier(s),
+            Some(t) => return Err(anyhow!("failed to find function identifier, found {t:?}")),
+            None => return Err(anyhow!("failed to find function identifier")),
+        };
+
+        if !matches!(tokens.next(), Some(Token::OpenParenthesis)) {
+            return Err(anyhow!(
+                "no open-parenthesis found for function {function_name}"
+            ));
+        }
+
+        assert!(matches!(tokens.next(), Some(Token::Keyword(Keyword::Void))));
+
+        if !matches!(tokens.next(), Some(Token::CloseParenthesis)) {
+            return Err(anyhow!(
+                "no close-parenthesis found for function {function_name}"
+            ));
+        }
+
+        if !matches!(tokens.next(), Some(Token::OpenBrace)) {
+            return Err(anyhow!("No open brace found for function {function_name}"));
+        }
+
+        let statement = Statement::parse(tokens)?;
+
+        if !matches!(tokens.next(), Some(Token::CloseBrace)) {
+            return Err(anyhow!("No close brace found for function {function_name}"));
+        }
+
+        Ok(Function {
+            name: function_name,
+            body: statement,
+        })
+    }
+
     fn assembly(self) -> crate::assembly::Function {
         crate::assembly::Function {
             name: self.name,
@@ -106,17 +105,22 @@ pub enum Statement {
 }
 
 impl Statement {
-    fn parse(tokens: &[Token]) -> Result<Self, anyhow::Error> {
-        // TODO: Support more statement types
-        match tokens {
-            [Token::Keyword(Keyword::Return), expr @ ..] => {
-                let expr = Expression::parse(expr)?;
+    fn parse(tokens: &mut TokenIter) -> Result<Self, anyhow::Error> {
+        let remove_semicolon = |tokens: &mut TokenIter| match tokens.next() {
+            Some(Token::Semicolon) => Ok(()),
+            Some(t) => Err(anyhow!("expected semicolon (';'), found {t:?}")),
+            None => Err(anyhow!("expected semicolon (';'), but no token was found")),
+        };
+
+        match tokens.next() {
+            Some(Token::Keyword(Keyword::Return)) => {
+                let expr = Expression::parse(tokens)?;
+                remove_semicolon(tokens)?;
                 Ok(Statement::Return(expr))
             }
 
-            _ => Err(anyhow!(
-                "sequence of tokens is not a known statement: {tokens:?}"
-            )),
+            Some(t) => Err(anyhow!("unexpected token found for statement: {t:?}")),
+            None => Err(anyhow!("no token found for statement")),
         }
     }
 
@@ -141,14 +145,11 @@ pub enum Expression {
 }
 
 impl Expression {
-    fn parse(tokens: &[Token]) -> Result<Self, anyhow::Error> {
-        // TODO: Support more expression types
-        match tokens {
-            [Token::Constant(i)] => Ok(Expression::Constant(*i)),
-
-            _ => Err(anyhow!(
-                "sequence of tokens is not a known expression: {tokens:?}"
-            )),
+    fn parse(tokens: &mut TokenIter) -> Result<Self, anyhow::Error> {
+        match tokens.next() {
+            Some(Token::Constant(i)) => Ok(Expression::Constant(i)),
+            Some(t) => Err(anyhow!("unknown token found for expression: {t:?}")),
+            None => Err(anyhow!("no token found for expression")),
         }
     }
 }
