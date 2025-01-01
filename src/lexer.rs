@@ -14,6 +14,14 @@ pub fn run(content: &str) -> Result<Vec<Token>, anyhow::Error> {
             '}' => tokens.push(Token::CloseBrace),
             ';' => tokens.push(Token::Semicolon),
 
+            // This can be either negation ('-') or decrement ('--')
+            '-' => match chars.next_if(|c| *c == '-') {
+                Some(_) => tokens.push(Token::Operator(Operator::Decrement)),
+                None => tokens.push(Token::Operator(Operator::Negation)),
+            },
+
+            '~' => tokens.push(Token::Operator(Operator::Complement)),
+
             // If we encounter any "normal characters" then we have found an identifier
             'a'..='z' | 'A'..='Z' | '_' => {
                 let mut extracted = String::from(c);
@@ -41,7 +49,7 @@ pub fn run(content: &str) -> Result<Vec<Token>, anyhow::Error> {
                             extracted.push(c);
                         }
 
-                        Some(' ' | ';' | '(' | ')') | None => break,
+                        Some(' ' | ';' | '(' | ')' | '-' | '~') | None => break,
                         Some(c) if c.is_whitespace() => break,
 
                         Some(c) => return Err(anyhow::anyhow!("Bad token found: {c}")),
@@ -57,6 +65,19 @@ pub fn run(content: &str) -> Result<Vec<Token>, anyhow::Error> {
     }
 
     Ok(tokens)
+}
+
+#[derive(Debug, Clone)]
+pub enum Token {
+    Identifier(String),
+    Constant(i64), // TODO: Maybe a custom constant type?
+    Keyword(Keyword),
+    Operator(Operator),
+    OpenParenthesis,
+    CloseParenthesis,
+    OpenBrace,
+    CloseBrace,
+    Semicolon,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -79,13 +100,8 @@ impl FromStr for Keyword {
 }
 
 #[derive(Debug, Clone)]
-pub enum Token {
-    Identifier(String),
-    Constant(i64), // TODO: Maybe a custom constant type?
-    Keyword(Keyword),
-    OpenParenthesis,
-    CloseParenthesis,
-    OpenBrace,
-    CloseBrace,
-    Semicolon,
+pub enum Operator {
+    Decrement,  // --
+    Negation,   // -
+    Complement, // ~
 }
