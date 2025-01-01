@@ -3,7 +3,7 @@ use std::vec::IntoIter;
 
 use anyhow::anyhow;
 
-use crate::lexer::{Keyword, Token};
+use crate::lexer::{Keyword, Operator, Token};
 
 pub fn parse(tokens: Vec<Token>) -> Result<Program, anyhow::Error> {
     let mut tokens = tokens.into_iter().peekable();
@@ -135,6 +135,7 @@ impl Statement {
                     crate::assembly::Instruction::Ret,
                 ]
             }
+            Self::Return(Expression::Unary(_, _)) => unimplemented!("unary operator"),
         }
     }
 }
@@ -142,14 +143,42 @@ impl Statement {
 #[derive(Debug, Clone)]
 pub enum Expression {
     Constant(i64),
+    Unary(UnaryOperator, Box<Expression>),
 }
 
 impl Expression {
     fn parse(tokens: &mut TokenIter) -> Result<Self, anyhow::Error> {
         match tokens.next() {
             Some(Token::Constant(i)) => Ok(Expression::Constant(i)),
+
+            Some(Token::Operator(Operator::Negation)) => Ok(Self::Unary(
+                UnaryOperator::Negate,
+                Box::new(Self::parse(tokens)?),
+            )),
+            Some(Token::Operator(Operator::Complement)) => Ok(Self::Unary(
+                UnaryOperator::Complement,
+                Box::new(Self::parse(tokens)?),
+            )),
+            Some(Token::Operator(Operator::Decrement)) => Err(anyhow!("decrement not implemented")),
+
+            Some(Token::OpenParenthesis) => {
+                let expr = Self::parse(tokens)?;
+
+                match tokens.next() {
+                    Some(Token::CloseParenthesis) => Ok(expr),
+                    Some(t) => Err(anyhow!("expected close parenthesis, found {t:?}")),
+                    None => Err(anyhow!("expected close parenthesis, found nothing")),
+                }
+            }
+
             Some(t) => Err(anyhow!("unknown token found for expression: {t:?}")),
             None => Err(anyhow!("no token found for expression")),
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub enum UnaryOperator {
+    Complement,
+    Negate,
 }
