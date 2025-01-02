@@ -1,5 +1,6 @@
-use std::iter::Peekable;
+use std::sync::atomic::Ordering;
 use std::vec::IntoIter;
+use std::{iter::Peekable, sync::atomic::AtomicUsize};
 
 use anyhow::anyhow;
 
@@ -26,6 +27,15 @@ pub type TokenIter<'a> = Peekable<IntoIter<Token>>;
 #[derive(Debug, Clone)]
 pub struct Identifier(pub String);
 
+impl Identifier {
+    pub fn new_temp() -> Self {
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let value = COUNTER.fetch_add(1, Ordering::Relaxed);
+        assert_ne!(value, usize::MAX, "max number of temp values exceeded");
+        Self(format!("tmp.{value}"))
+    }
+}
+
 impl std::fmt::Display for Identifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
@@ -36,8 +46,8 @@ impl std::fmt::Display for Identifier {
 pub struct Program(pub Function);
 
 impl Program {
-    pub fn assembly(self) -> crate::assembly::Program {
-        crate::assembly::Program(self.0.assembly())
+    pub fn emit_tacky(self) -> crate::tacky::Program {
+        crate::tacky::Program(self.0.emit_tacky())
     }
 }
 
@@ -91,10 +101,13 @@ impl Function {
         })
     }
 
-    fn assembly(self) -> crate::assembly::Function {
-        crate::assembly::Function {
+    fn emit_tacky(self) -> crate::tacky::Function {
+        let mut instructions = Vec::new();
+        self.body.emit_tacky(&mut instructions);
+
+        crate::tacky::Function {
             name: self.name,
-            instructions: self.body.assembly(),
+            body: instructions,
         }
     }
 }
@@ -124,18 +137,12 @@ impl Statement {
         }
     }
 
-    fn assembly(self) -> Vec<crate::assembly::Instruction> {
+    fn emit_tacky(self, instructions: &mut Vec<crate::tacky::Instruction>) {
         match self {
-            Self::Return(Expression::Constant(i)) => {
-                vec![
-                    crate::assembly::Instruction::Mov {
-                        src: crate::assembly::Operand::Imm(i),
-                        dst: crate::assembly::Operand::Register,
-                    },
-                    crate::assembly::Instruction::Ret,
-                ]
+            Self::Return(expr) => {
+                let value = expr.emit_tacky(instructions);
+                instructions.push(crate::tacky::Instruction::Return(value));
             }
-            Self::Return(Expression::Unary(_, _)) => unimplemented!("unary operator"),
         }
     }
 }
@@ -175,10 +182,37 @@ impl Expression {
             None => Err(anyhow!("no token found for expression")),
         }
     }
+
+    fn emit_tacky(&self, instructions: &mut Vec<crate::tacky::Instruction>) -> crate::tacky::Value {
+        match self {
+            Self::Constant(c) => return crate::tacky::Value::Constant(*c),
+            Self::Unary(unary_op, expr) => {
+                let src = expr.emit_tacky(instructions);
+                let dst = crate::tacky::Variable(Identifier::new_temp());
+
+                instructions.push(crate::tacky::Instruction::Unary {
+                    op: unary_op.into_tacky(),
+                    src,
+                    dst: dst.clone(),
+                });
+
+                crate::tacky::Value::Variable(dst)
+            }
+        }
+    }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum UnaryOperator {
     Complement,
     Negate,
+}
+
+impl UnaryOperator {
+    fn into_tacky(self) -> crate::tacky::UnaryOperator {
+        match self {
+            Self::Complement => crate::tacky::UnaryOperator::Complement,
+            Self::Negate => crate::tacky::UnaryOperator::Negate,
+        }
+    }
 }

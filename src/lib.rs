@@ -6,6 +6,7 @@ use clap::Args;
 mod assembly;
 mod ast;
 mod lexer;
+mod tacky;
 
 #[derive(Debug, Clone, Args)]
 #[group(required = false, multiple = false)]
@@ -15,6 +16,9 @@ pub struct Options {
 
     #[arg(long)]
     pub parse: bool,
+
+    #[arg(long)]
+    pub tacky: bool,
 
     #[arg(long)]
     pub codegen: bool,
@@ -33,13 +37,19 @@ pub fn compiler(input: &Path, output: &Path, options: Options) -> Result<bool, a
         return Ok(false);
     }
 
-    let assembly = program.assembly();
-    if options.codegen {
+    let tacky = program.emit_tacky();
+    if options.tacky {
         return Ok(false);
     }
 
-    let buf = format!("{assembly}");
-    std::fs::write(output, &buf[..])?;
+    // let assembly = program.assembly();
+    // if options.codegen {
+    //     return Ok(false);
+    // }
+
+    // let buf = format!("{assembly}");
+    // std::fs::write(output, &buf[..])?;
+    todo!();
 
     Ok(true)
 }
