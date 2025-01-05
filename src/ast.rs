@@ -158,15 +158,15 @@ impl Expression {
         match tokens.next() {
             Some(Token::Constant(i)) => Ok(Expression::Constant(i)),
 
-            Some(Token::Operator(Operator::Negation)) => Ok(Self::Unary(
+            Some(Token::Operator(Operator::Minus)) => Ok(Self::Unary(
                 UnaryOperator::Negate,
                 Box::new(Self::parse(tokens)?),
             )),
-            Some(Token::Operator(Operator::Complement)) => Ok(Self::Unary(
+            Some(Token::Operator(Operator::Tilde)) => Ok(Self::Unary(
                 UnaryOperator::Complement,
                 Box::new(Self::parse(tokens)?),
             )),
-            Some(Token::Operator(Operator::Decrement)) => Err(anyhow!("decrement not implemented")),
+            Some(Token::Operator(op)) => Err(anyhow!("operator {op:?} not implemented")),
 
             Some(Token::OpenParenthesis) => {
                 let expr = Self::parse(tokens)?;

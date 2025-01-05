@@ -14,13 +14,22 @@ pub fn run(content: &str) -> Result<Vec<Token>, anyhow::Error> {
             '}' => tokens.push(Token::CloseBrace),
             ';' => tokens.push(Token::Semicolon),
 
-            // This can be either negation ('-') or decrement ('--')
-            '-' => match chars.next_if(|c| *c == '-') {
-                Some(_) => tokens.push(Token::Operator(Operator::Decrement)),
-                None => tokens.push(Token::Operator(Operator::Negation)),
+            // This can be either plus ('+') or increment ('++')
+            '+' => match chars.next_if(|c| *c == '+') {
+                Some(_) => tokens.push(Token::Operator(Operator::Increment)),
+                None => tokens.push(Token::Operator(Operator::Plus)),
             },
 
-            '~' => tokens.push(Token::Operator(Operator::Complement)),
+            // This can be either minus ('-') or decrement ('--')
+            '-' => match chars.next_if(|c| *c == '-') {
+                Some(_) => tokens.push(Token::Operator(Operator::Decrement)),
+                None => tokens.push(Token::Operator(Operator::Minus)),
+            },
+
+            '*' => tokens.push(Token::Operator(Operator::Asterisk)),
+            '/' => tokens.push(Token::Operator(Operator::Slash)),
+            '%' => tokens.push(Token::Operator(Operator::Percent)),
+            '~' => tokens.push(Token::Operator(Operator::Tilde)),
 
             // If we encounter any "normal characters" then we have found an identifier
             'a'..='z' | 'A'..='Z' | '_' => {
@@ -49,10 +58,11 @@ pub fn run(content: &str) -> Result<Vec<Token>, anyhow::Error> {
                             extracted.push(c);
                         }
 
-                        Some(' ' | ';' | '(' | ')' | '-' | '~') | None => break,
-                        Some(c) if c.is_whitespace() => break,
+                        Some(c) if c.is_alphabetic() => {
+                            return Err(anyhow::anyhow!("Bad token found: {c}"))
+                        }
 
-                        Some(c) => return Err(anyhow::anyhow!("Bad token found: {c}")),
+                        Some(_) | None => break,
                     }
                 }
 
@@ -101,7 +111,14 @@ impl FromStr for Keyword {
 
 #[derive(Debug, Clone)]
 pub enum Operator {
-    Decrement,  // --
-    Negation,   // -
-    Complement, // ~
+    Plus,  // +
+    Minus, // -
+
+    Increment, // ++
+    Decrement, // --
+
+    Asterisk, // *
+    Slash,    // /
+    Percent,  // %
+    Tilde,    // ~
 }
