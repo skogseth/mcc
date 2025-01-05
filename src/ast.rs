@@ -2,7 +2,7 @@ use std::sync::atomic::Ordering;
 use std::vec::IntoIter;
 use std::{iter::Peekable, sync::atomic::AtomicUsize};
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 
 use crate::lexer::{Keyword, Operator, Token};
 
@@ -151,25 +151,49 @@ impl Statement {
 pub enum Expression {
     Constant(i64),
     Unary(UnaryOperator, Box<Expression>),
+    Binary(BinaryOperator, Box<Expression>, Box<Expression>),
 }
 
 impl Expression {
     fn parse(tokens: &mut TokenIter) -> Result<Self, anyhow::Error> {
+        Self::parse_expr(tokens, 0)
+    }
+
+    fn parse_expr(tokens: &mut TokenIter, min_prec: u32) -> Result<Self, anyhow::Error> {
+        let mut left = Self::parse_factor(tokens)?;
+
+        while let Some(bin_op) = tokens.peek().and_then(BinaryOperator::parse) {
+            // Check precedence of operator
+            if bin_op.precedence() < min_prec {
+                break;
+            }
+
+            // Then remember to progress the iterator
+            let _ = tokens.next();
+
+            let right = Self::parse_expr(tokens, bin_op.precedence() + 1)?;
+            left = Expression::Binary(bin_op, Box::new(left), Box::new(right));
+        }
+
+        Ok(left)
+    }
+
+    fn parse_factor(tokens: &mut TokenIter) -> Result<Self, anyhow::Error> {
         match tokens.next() {
             Some(Token::Constant(i)) => Ok(Expression::Constant(i)),
 
             Some(Token::Operator(Operator::Minus)) => Ok(Self::Unary(
                 UnaryOperator::Negate,
-                Box::new(Self::parse(tokens)?),
+                Box::new(Self::parse_expr(tokens, 0)?),
             )),
             Some(Token::Operator(Operator::Tilde)) => Ok(Self::Unary(
                 UnaryOperator::Complement,
-                Box::new(Self::parse(tokens)?),
+                Box::new(Self::parse_expr(tokens, 0)?),
             )),
             Some(Token::Operator(op)) => Err(anyhow!("operator {op:?} not implemented")),
 
             Some(Token::OpenParenthesis) => {
-                let expr = Self::parse(tokens)?;
+                let expr = Self::parse_expr(tokens, 0)?;
 
                 match tokens.next() {
                     Some(Token::CloseParenthesis) => Ok(expr),
@@ -198,6 +222,7 @@ impl Expression {
 
                 crate::tacky::Value::Variable(dst)
             }
+            Self::Binary(_, _, _) => unimplemented!("can't generate tacky for binary operation"),
         }
     }
 }
@@ -213,6 +238,35 @@ impl UnaryOperator {
         match self {
             Self::Complement => crate::tacky::UnaryOperator::Complement,
             Self::Negate => crate::tacky::UnaryOperator::Negate,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum BinaryOperator {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Remainder,
+}
+
+impl BinaryOperator {
+    fn parse(token: &Token) -> Option<Self> {
+        match token {
+            Token::Operator(Operator::Plus) => Some(BinaryOperator::Add),
+            Token::Operator(Operator::Minus) => Some(BinaryOperator::Subtract),
+            Token::Operator(Operator::Asterisk) => Some(BinaryOperator::Multiply),
+            Token::Operator(Operator::Slash) => Some(BinaryOperator::Divide),
+            Token::Operator(Operator::Percent) => Some(BinaryOperator::Remainder),
+            _ => return None,
+        }
+    }
+
+    fn precedence(self) -> u32 {
+        match self {
+            BinaryOperator::Add | BinaryOperator::Subtract => 45,
+            BinaryOperator::Multiply | BinaryOperator::Divide | BinaryOperator::Remainder => 50,
         }
     }
 }
