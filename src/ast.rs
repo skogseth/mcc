@@ -24,7 +24,7 @@ pub fn parse(tokens: Vec<Token>) -> Result<Program, anyhow::Error> {
 
 pub type TokenIter<'a> = Peekable<IntoIter<Token>>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Identifier(pub String);
 
 impl Identifier {

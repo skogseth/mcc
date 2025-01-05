@@ -42,10 +42,10 @@ pub fn compiler(input: &Path, output: &Path, options: Options) -> Result<bool, a
         return Ok(false);
     }
 
-    // let assembly = program.assembly();
-    // if options.codegen {
-    //     return Ok(false);
-    // }
+    let assembly = tacky.assembly();
+    if options.codegen {
+        return Ok(false);
+    }
 
     // let buf = format!("{assembly}");
     // std::fs::write(output, &buf[..])?;
