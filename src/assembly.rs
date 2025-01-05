@@ -20,7 +20,7 @@ impl std::fmt::Display for Program {
 pub struct Function {
     pub name: Identifier,
     pub instructions: Vec<Instruction>,
-    pub stack_offset: i64,
+    pub stack_offset: u32,
 }
 
 impl std::fmt::Display for Function {
@@ -33,11 +33,13 @@ impl std::fmt::Display for Function {
         writeln!(f, "\t.globl {name}")?;
         writeln!(f, "{name}:")?;
 
-        // Write instructions to allocate stack space
-        todo!();
+        // Function prologue
+        writeln!(f, "\tpushq\t%rbp")?;
+        writeln!(f, "\tmovq\t%rsp, %rbp")?;
+        writeln!(f, "\tsubq\t${}, %rsp", self.stack_offset)?;
 
         for instruction in &self.instructions {
-            writeln!(f, "\t{instruction}")?;
+            write!(f, "{instruction}")?;
         }
 
         Ok(())
@@ -54,9 +56,14 @@ pub enum Instruction {
 impl std::fmt::Display for Instruction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Mov { src, dst } => write!(f, "movl\t{src}, {dst}"),
-            Self::Unary(_, _) => todo!(),
-            Self::Ret => f.write_str("ret"),
+            Self::Mov { src, dst } => writeln!(f, "\tmovl\t{src}, {dst}"),
+            Self::Unary(op, dst) => writeln!(f, "\t{op}\t{dst}"),
+            Self::Ret => {
+                writeln!(f, "\tmovq\t%rbp, %rsp")?;
+                writeln!(f, "\tpopq\t%rbp")?;
+                writeln!(f, "\tret")?;
+                Ok(())
+            }
         }
     }
 }
@@ -65,6 +72,15 @@ impl std::fmt::Display for Instruction {
 pub enum UnaryOperator {
     Not,
     Neg,
+}
+
+impl std::fmt::Display for UnaryOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Not => f.write_str("notl"),
+            Self::Neg => f.write_str("negl"),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -79,7 +95,10 @@ impl std::fmt::Display for Operand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Imm(i) => write!(f, "${i}"),
-            _ => todo!(),
+            Self::Register(Register::Ax) => f.write_str("%eax"),
+            Self::Register(Register::R10) => f.write_str("%r10d"),
+            Self::Stack(i) => write!(f, "{i}(%rbp)"),
+            Self::Pseudo(_) => panic!("no valid assembly for pseudoregister"),
         }
     }
 }

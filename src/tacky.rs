@@ -29,7 +29,7 @@ impl Function {
         crate::assembly::Function {
             name: self.name,
             instructions,
-            stack_offset: offset,
+            stack_offset: offset.abs() as u32,
         }
     }
 }
