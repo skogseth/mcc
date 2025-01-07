@@ -215,14 +215,27 @@ impl Expression {
                 let dst = crate::tacky::Variable(Identifier::new_temp());
 
                 instructions.push(crate::tacky::Instruction::Unary {
-                    op: unary_op.into_tacky(),
+                    op: *unary_op,
                     src,
                     dst: dst.clone(),
                 });
 
                 crate::tacky::Value::Variable(dst)
             }
-            Self::Binary(_, _, _) => unimplemented!("can't generate tacky for binary operation"),
+            Self::Binary(binary_op, expr_1, expr_2) => {
+                let val_1 = expr_1.emit_tacky(instructions);
+                let val_2 = expr_2.emit_tacky(instructions);
+                let dst = crate::tacky::Variable(Identifier::new_temp());
+
+                instructions.push(crate::tacky::Instruction::Binary {
+                    op: *binary_op,
+                    val_1,
+                    val_2,
+                    dst: dst.clone(),
+                });
+
+                crate::tacky::Value::Variable(dst)
+            }
         }
     }
 }
@@ -231,15 +244,6 @@ impl Expression {
 pub enum UnaryOperator {
     Complement,
     Negate,
-}
-
-impl UnaryOperator {
-    fn into_tacky(self) -> crate::tacky::UnaryOperator {
-        match self {
-            Self::Complement => crate::tacky::UnaryOperator::Complement,
-            Self::Negate => crate::tacky::UnaryOperator::Negate,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

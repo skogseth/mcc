@@ -1,4 +1,4 @@
-use crate::ast::Identifier;
+use crate::ast::{BinaryOperator, Identifier, UnaryOperator};
 
 #[derive(Debug, Clone)]
 pub struct Program(pub Function);
@@ -42,6 +42,12 @@ pub enum Instruction {
         src: Value,
         dst: Variable,
     },
+    Binary {
+        op: BinaryOperator,
+        val_1: Value,
+        val_2: Value,
+        dst: Variable,
+    },
 }
 
 impl Instruction {
@@ -63,6 +69,12 @@ impl Instruction {
                 crate::assembly::Instruction::Unary(op.assembly(), dst.assembly()),
             ]
             .into_iter(),
+            Self::Binary {
+                op,
+                val_1,
+                val_2,
+                dst,
+            } => unimplemented!(),
         }
     }
 }
@@ -89,12 +101,6 @@ impl Variable {
     pub fn assembly(self) -> crate::assembly::Operand {
         crate::assembly::Operand::Pseudo(self.0)
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum UnaryOperator {
-    Complement,
-    Negate,
 }
 
 impl UnaryOperator {
