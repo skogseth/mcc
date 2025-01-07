@@ -44,37 +44,83 @@ pub enum Instruction {
     },
     Binary {
         op: BinaryOperator,
-        val_1: Value,
-        val_2: Value,
+        src_1: Value,
+        src_2: Value,
         dst: Variable,
     },
 }
 
 impl Instruction {
-    pub fn assembly(self) -> impl Iterator<Item = crate::assembly::Instruction> {
+    pub fn assembly(self) -> Vec<crate::assembly::Instruction> {
         match self {
-            Self::Return(value) => [
+            Self::Return(value) => vec![
                 crate::assembly::Instruction::Mov {
                     src: value.assembly(),
                     dst: crate::assembly::Operand::Register(crate::assembly::Register::Ax),
                 },
                 crate::assembly::Instruction::Ret,
-            ]
-            .into_iter(),
-            Self::Unary { op, src, dst } => [
+            ],
+
+            Self::Unary { op, src, dst } => vec![
                 crate::assembly::Instruction::Mov {
                     src: src.assembly(),
                     dst: dst.clone().assembly(),
                 },
                 crate::assembly::Instruction::Unary(op.assembly(), dst.assembly()),
-            ]
-            .into_iter(),
+            ],
+
             Self::Binary {
                 op,
-                val_1,
-                val_2,
+                src_1,
+                src_2,
                 dst,
-            } => unimplemented!(),
+            } => {
+                macro_rules! idiv {
+                    ($register:expr) => {
+                        vec![
+                            crate::assembly::Instruction::Mov {
+                                src: src_1.assembly(),
+                                dst: crate::assembly::Operand::Register(
+                                    crate::assembly::Register::Ax,
+                                ),
+                            },
+                            crate::assembly::Instruction::Cdq,
+                            crate::assembly::Instruction::Idiv(src_2.assembly()),
+                            crate::assembly::Instruction::Mov {
+                                src: crate::assembly::Operand::Register($register),
+                                dst: dst.assembly(),
+                            },
+                        ]
+                    };
+                }
+
+                macro_rules! binary_op {
+                    ($bin_op:expr) => {
+                        vec![
+                            crate::assembly::Instruction::Mov {
+                                src: src_1.assembly(),
+                                dst: crate::assembly::Operand::Register(
+                                    crate::assembly::Register::Ax,
+                                ),
+                            },
+                            crate::assembly::Instruction::Binary(
+                                $bin_op,
+                                src_2.assembly(),
+                                dst.assembly(),
+                            ),
+                        ]
+                    };
+                }
+
+                match op {
+                    BinaryOperator::Divide => idiv!(crate::assembly::Register::Ax),
+                    BinaryOperator::Remainder => idiv!(crate::assembly::Register::Dx),
+
+                    BinaryOperator::Add => binary_op!(crate::assembly::BinaryOperator::Add),
+                    BinaryOperator::Subtract => binary_op!(crate::assembly::BinaryOperator::Sub),
+                    BinaryOperator::Multiply => binary_op!(crate::assembly::BinaryOperator::Mul),
+                }
+            }
         }
     }
 }

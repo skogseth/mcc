@@ -229,8 +229,8 @@ impl Expression {
 
                 instructions.push(crate::tacky::Instruction::Binary {
                     op: *binary_op,
-                    val_1,
-                    val_2,
+                    src_1: val_1,
+                    src_2: val_2,
                     dst: dst.clone(),
                 });
 

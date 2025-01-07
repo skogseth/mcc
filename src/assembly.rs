@@ -50,6 +50,9 @@ impl std::fmt::Display for Function {
 pub enum Instruction {
     Mov { src: Operand, dst: Operand },
     Unary(UnaryOperator, Operand),
+    Binary(BinaryOperator, Operand, Operand),
+    Idiv(Operand),
+    Cdq,
     Ret,
 }
 
@@ -64,6 +67,7 @@ impl std::fmt::Display for Instruction {
                 writeln!(f, "\tret")?;
                 Ok(())
             }
+            _ => unimplemented!(),
         }
     }
 }
@@ -84,6 +88,23 @@ impl std::fmt::Display for UnaryOperator {
 }
 
 #[derive(Debug, Clone)]
+pub enum BinaryOperator {
+    Add,
+    Sub,
+    Mul,
+}
+
+impl std::fmt::Display for BinaryOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Add => f.write_str("addl"),
+            Self::Sub => f.write_str("subl"),
+            Self::Mul => f.write_str("imull"),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum Operand {
     Imm(i64),
     Register(Register),
@@ -96,7 +117,9 @@ impl std::fmt::Display for Operand {
         match self {
             Self::Imm(i) => write!(f, "${i}"),
             Self::Register(Register::Ax) => f.write_str("%eax"),
+            Self::Register(Register::Dx) => f.write_str("%edx"),
             Self::Register(Register::R10) => f.write_str("%r10d"),
+            Self::Register(Register::R11) => f.write_str("%r11d"),
             Self::Stack(i) => write!(f, "{i}(%rbp)"),
             Self::Pseudo(_) => panic!("no valid assembly for pseudoregister"),
         }
@@ -106,7 +129,9 @@ impl std::fmt::Display for Operand {
 #[derive(Debug, Clone)]
 pub enum Register {
     Ax,
+    Dx,
     R10,
+    R11,
 }
 
 pub fn replace_pseudo_registers(instructions: &mut [Instruction]) -> i64 {
@@ -136,10 +161,17 @@ pub fn replace_pseudo_registers(instructions: &mut [Instruction]) -> i64 {
                 update_register(dst);
             }
 
-            Instruction::Unary(_, dst) => update_register(dst),
+            Instruction::Unary(_, op) => update_register(op),
+
+            Instruction::Binary(_, op_1, op_2) => {
+                update_register(op_1);
+                update_register(op_2);
+            }
+
+            Instruction::Idiv(op) => update_register(op),
 
             // No pseudo-registers to change here
-            Instruction::Ret => {}
+            Instruction::Cdq | Instruction::Ret => {}
         }
     }
 
@@ -150,19 +182,52 @@ pub fn fix_move_instructions(instructions: Vec<Instruction>) -> Vec<Instruction>
     instructions
         .into_iter()
         .flat_map(|instruction| match instruction {
-            Instruction::Mov { src, dst } => match (src, dst) {
-                (src @ Operand::Stack(_), dst @ Operand::Stack(_)) => vec![
-                    Instruction::Mov {
-                        src,
-                        dst: Operand::Register(Register::R10),
-                    },
-                    Instruction::Mov {
-                        src: Operand::Register(Register::R10),
-                        dst,
-                    },
-                ],
-                (src, dst) => vec![Instruction::Mov { src, dst }],
-            },
+            Instruction::Mov {
+                src: src @ Operand::Stack(_),
+                dst: dst @ Operand::Stack(_),
+            } => vec![
+                Instruction::Mov {
+                    src,
+                    dst: Operand::Register(Register::R10),
+                },
+                Instruction::Mov {
+                    src: Operand::Register(Register::R10),
+                    dst,
+                },
+            ],
+
+            Instruction::Binary(
+                op @ (BinaryOperator::Add | BinaryOperator::Sub),
+                src @ Operand::Stack(_),
+                dst @ Operand::Stack(_),
+            ) => vec![
+                Instruction::Mov {
+                    src,
+                    dst: Operand::Register(Register::R10),
+                },
+                Instruction::Binary(op, Operand::Register(Register::R10), dst),
+            ],
+
+            Instruction::Binary(op @ BinaryOperator::Mul, src, dst @ Operand::Stack(_)) => vec![
+                Instruction::Mov {
+                    src: dst.clone(),
+                    dst: Operand::Register(Register::R11),
+                },
+                Instruction::Binary(op, src, Operand::Register(Register::R11)),
+                Instruction::Mov {
+                    src: Operand::Register(Register::R11),
+                    dst,
+                },
+            ],
+
+            Instruction::Idiv(src @ Operand::Imm(_)) => vec![
+                Instruction::Mov {
+                    src,
+                    dst: Operand::Register(Register::R10),
+                },
+                Instruction::Idiv(Operand::Register(Register::R10)),
+            ],
+
             _ => vec![instruction],
         })
         .collect()
