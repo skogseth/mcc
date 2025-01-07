@@ -77,7 +77,7 @@ pub fn run(content: &str) -> Result<Vec<Token>, anyhow::Error> {
     Ok(tokens)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {
     Identifier(String),
     Constant(i64), // TODO: Maybe a custom constant type?
@@ -90,7 +90,7 @@ pub enum Token {
     Semicolon,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Keyword {
     Int,
     Void,
@@ -109,7 +109,7 @@ impl FromStr for Keyword {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Operator {
     Plus,  // +
     Minus, // -

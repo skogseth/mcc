@@ -2,7 +2,7 @@ use std::sync::atomic::Ordering;
 use std::vec::IntoIter;
 use std::{iter::Peekable, sync::atomic::AtomicUsize};
 
-use anyhow::{anyhow, Context};
+use anyhow::anyhow;
 
 use crate::lexer::{Keyword, Operator, Token};
 
@@ -147,7 +147,7 @@ impl Statement {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expression {
     Constant(i64),
     Unary(UnaryOperator, Box<Expression>),
@@ -227,7 +227,7 @@ impl Expression {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnaryOperator {
     Complement,
     Negate,
@@ -242,7 +242,7 @@ impl UnaryOperator {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOperator {
     Add,
     Subtract,
@@ -268,5 +268,173 @@ impl BinaryOperator {
             BinaryOperator::Add | BinaryOperator::Subtract => 45,
             BinaryOperator::Multiply | BinaryOperator::Divide | BinaryOperator::Remainder => 50,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn binary_operators() {
+        let tokens = vec![
+            Token::Constant(3),
+            Token::Operator(Operator::Minus),
+            Token::Constant(2),
+        ];
+        let mut tokens = tokens.into_iter().peekable();
+
+        let parsed = Expression::parse(&mut tokens).unwrap();
+
+        assert_eq!(
+            parsed,
+            Expression::Binary(
+                BinaryOperator::Subtract,
+                Box::new(Expression::Constant(3)),
+                Box::new(Expression::Constant(2)),
+            )
+        );
+    }
+
+    #[test]
+    fn operator_precedence() {
+        let tokens = vec![
+            Token::Constant(1),
+            Token::Operator(Operator::Plus),
+            Token::Constant(2),
+            Token::Operator(Operator::Asterisk),
+            Token::Constant(3),
+        ];
+        let mut tokens = tokens.into_iter().peekable();
+
+        let parsed = Expression::parse(&mut tokens).unwrap();
+
+        assert_eq!(
+            parsed,
+            Expression::Binary(
+                BinaryOperator::Add,
+                Box::new(Expression::Constant(1)),
+                Box::new(Expression::Binary(
+                    BinaryOperator::Multiply,
+                    Box::new(Expression::Constant(2)),
+                    Box::new(Expression::Constant(3))
+                )),
+            )
+        );
+    }
+
+    #[test]
+    fn left_ordering() {
+        let tokens = vec![
+            Token::Constant(4),
+            Token::Operator(Operator::Asterisk),
+            Token::Constant(3),
+            Token::Operator(Operator::Slash),
+            Token::Constant(2),
+        ];
+        let mut tokens = tokens.into_iter().peekable();
+
+        let parsed = Expression::parse(&mut tokens).unwrap();
+
+        assert_eq!(
+            parsed,
+            Expression::Binary(
+                BinaryOperator::Divide,
+                Box::new(Expression::Binary(
+                    BinaryOperator::Multiply,
+                    Box::new(Expression::Constant(4)),
+                    Box::new(Expression::Constant(3))
+                )),
+                Box::new(Expression::Constant(2)),
+            )
+        );
+    }
+
+    #[test]
+    fn operator_precedence_with_parsing() {
+        let expr = "10 + (8 - 4) * 3";
+        let tokens = crate::lexer::run(expr).unwrap();
+        assert_eq!(
+            tokens,
+            [
+                Token::Constant(10),
+                Token::Operator(Operator::Plus),
+                Token::OpenParenthesis,
+                Token::Constant(8),
+                Token::Operator(Operator::Minus),
+                Token::Constant(4),
+                Token::CloseParenthesis,
+                Token::Operator(Operator::Asterisk),
+                Token::Constant(3),
+            ]
+        );
+
+        let mut tokens = tokens.into_iter().peekable();
+
+        let parsed = Expression::parse(&mut tokens).unwrap();
+
+        assert_eq!(
+            parsed,
+            Expression::Binary(
+                BinaryOperator::Add,
+                Box::new(Expression::Constant(10)),
+                Box::new(Expression::Binary(
+                    BinaryOperator::Multiply,
+                    Box::new(Expression::Binary(
+                        BinaryOperator::Subtract,
+                        Box::new(Expression::Constant(8)),
+                        Box::new(Expression::Constant(4)),
+                    )),
+                    Box::new(Expression::Constant(3)),
+                ))
+            ),
+        );
+    }
+
+    #[test]
+    fn operator_precedence_with_parsing_and_negation() {
+        let expr = "10 + (8 - 4) * (-3)";
+        let tokens = crate::lexer::run(expr).unwrap();
+        assert_eq!(
+            tokens,
+            [
+                Token::Constant(10),
+                Token::Operator(Operator::Plus),
+                Token::OpenParenthesis,
+                Token::Constant(8),
+                Token::Operator(Operator::Minus),
+                Token::Constant(4),
+                Token::CloseParenthesis,
+                Token::Operator(Operator::Asterisk),
+                Token::OpenParenthesis,
+                Token::Operator(Operator::Minus),
+                Token::Constant(3),
+                Token::CloseParenthesis,
+            ]
+        );
+
+        let mut tokens = tokens.into_iter().peekable();
+
+        let parsed = Expression::parse(&mut tokens).unwrap();
+
+        assert_eq!(
+            parsed,
+            Expression::Binary(
+                BinaryOperator::Add,
+                Box::new(Expression::Constant(10)),
+                Box::new(Expression::Binary(
+                    BinaryOperator::Multiply,
+                    Box::new(Expression::Binary(
+                        BinaryOperator::Subtract,
+                        Box::new(Expression::Constant(8)),
+                        Box::new(Expression::Constant(4)),
+                    )),
+                    Box::new(Expression::Unary(
+                        UnaryOperator::Negate,
+                        Box::new(Expression::Constant(3)),
+                    )),
+                ))
+            ),
+        );
     }
 }
