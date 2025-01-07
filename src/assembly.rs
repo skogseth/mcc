@@ -61,13 +61,15 @@ impl std::fmt::Display for Instruction {
         match self {
             Self::Mov { src, dst } => writeln!(f, "\tmovl\t{src}, {dst}"),
             Self::Unary(op, dst) => writeln!(f, "\t{op}\t{dst}"),
+            Self::Binary(op, src, dst) => writeln!(f, "\t{op}\t{src}, {dst}"),
+            Self::Idiv(dst) => writeln!(f, "\tidivl\t{dst}"),
+            Self::Cdq => writeln!(f, "\tcdq"),
             Self::Ret => {
                 writeln!(f, "\tmovq\t%rbp, %rsp")?;
                 writeln!(f, "\tpopq\t%rbp")?;
                 writeln!(f, "\tret")?;
                 Ok(())
             }
-            _ => unimplemented!(),
         }
     }
 }

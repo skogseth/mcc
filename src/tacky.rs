@@ -99,9 +99,7 @@ impl Instruction {
                         vec![
                             crate::assembly::Instruction::Mov {
                                 src: src_1.assembly(),
-                                dst: crate::assembly::Operand::Register(
-                                    crate::assembly::Register::Ax,
-                                ),
+                                dst: dst.clone().assembly(),
                             },
                             crate::assembly::Instruction::Binary(
                                 $bin_op,
