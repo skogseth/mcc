@@ -184,11 +184,11 @@ impl Expression {
 
             Some(Token::Operator(Operator::Minus)) => Ok(Self::Unary(
                 UnaryOperator::Negate,
-                Box::new(Self::parse_expr(tokens, 0)?),
+                Box::new(Self::parse_factor(tokens)?),
             )),
             Some(Token::Operator(Operator::Tilde)) => Ok(Self::Unary(
                 UnaryOperator::Complement,
-                Box::new(Self::parse_expr(tokens, 0)?),
+                Box::new(Self::parse_factor(tokens)?),
             )),
             Some(Token::Operator(op)) => Err(anyhow!("operator {op:?} not implemented")),
 
@@ -350,6 +350,31 @@ mod tests {
                     Box::new(Expression::Constant(3))
                 )),
                 Box::new(Expression::Constant(2)),
+            )
+        );
+    }
+
+    #[test]
+    fn unary_and_binary_operator() {
+        let tokens = vec![
+            Token::Operator(Operator::Minus),
+            Token::Constant(4),
+            Token::Operator(Operator::Asterisk),
+            Token::Constant(3),
+        ];
+        let mut tokens = tokens.into_iter().peekable();
+
+        let parsed = Expression::parse(&mut tokens).unwrap();
+
+        assert_eq!(
+            parsed,
+            Expression::Binary(
+                BinaryOperator::Multiply,
+                Box::new(Expression::Unary(
+                    UnaryOperator::Negate,
+                    Box::new(Expression::Constant(4)),
+                )),
+                Box::new(Expression::Constant(3)),
             )
         );
     }
