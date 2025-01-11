@@ -1,5 +1,7 @@
 use std::str::FromStr;
 
+use anyhow::anyhow;
+
 pub fn run(content: &str) -> Result<Vec<Token>, anyhow::Error> {
     let mut chars = content.chars().peekable();
 
@@ -31,6 +33,35 @@ pub fn run(content: &str) -> Result<Vec<Token>, anyhow::Error> {
             '%' => tokens.push(Token::Operator(Operator::Percent)),
             '~' => tokens.push(Token::Operator(Operator::Tilde)),
 
+            // Could be either "not" ('!') or "not equal" ('!=')
+            '!' => match chars.next_if(|c| *c == '=') {
+                Some(_) => tokens.push(Token::Operator(Operator::NotEquals)),
+                None => tokens.push(Token::Operator(Operator::Not)),
+            },
+
+            '&' => match chars.next_if(|c| *c == '&') {
+                Some(_) => tokens.push(Token::Operator(Operator::And)),
+                None => return Err(anyhow!("bitwise and ('&') is not supported")),
+            },
+            '|' => match chars.next_if(|c| *c == '|') {
+                Some(_) => tokens.push(Token::Operator(Operator::Or)),
+                None => return Err(anyhow!("bitwise or ('|') is not supported")),
+            },
+
+            '=' => match chars.next_if(|c| *c == '=') {
+                Some(_) => tokens.push(Token::Operator(Operator::Equals)),
+                None => return Err(anyhow!("assignment operator ('=') not supported")),
+            },
+
+            '<' => match chars.next_if(|c| *c == '=') {
+                Some(_) => tokens.push(Token::Operator(Operator::LessThanOrEqual)),
+                None => tokens.push(Token::Operator(Operator::LessThan)),
+            },
+            '>' => match chars.next_if(|c| *c == '=') {
+                Some(_) => tokens.push(Token::Operator(Operator::GreaterThanOrEqual)),
+                None => tokens.push(Token::Operator(Operator::GreaterThan)),
+            },
+
             // If we encounter any "normal characters" then we have found an identifier
             'a'..='z' | 'A'..='Z' | '_' => {
                 let mut extracted = String::from(c);
@@ -59,7 +90,7 @@ pub fn run(content: &str) -> Result<Vec<Token>, anyhow::Error> {
                         }
 
                         Some(c) if c.is_alphabetic() => {
-                            return Err(anyhow::anyhow!("Bad token found: {c}"))
+                            return Err(anyhow!("Bad token found: {c}"))
                         }
 
                         Some(_) | None => break,
@@ -70,7 +101,7 @@ pub fn run(content: &str) -> Result<Vec<Token>, anyhow::Error> {
                 tokens.push(Token::Constant(parsed));
             }
 
-            c => return Err(anyhow::anyhow!("No matching token found for {c}")),
+            c => return Err(anyhow!("No matching token found for {c}")),
         }
     }
 
@@ -121,4 +152,15 @@ pub enum Operator {
     Slash,    // /
     Percent,  // %
     Tilde,    // ~
+
+    Not, // !
+    And, // &&
+    Or,  // ||
+
+    Equals,             // ==
+    NotEquals,          // !=
+    LessThan,           // <
+    GreaterThan,        // >
+    LessThanOrEqual,    // <=
+    GreaterThanOrEqual, // <=
 }
