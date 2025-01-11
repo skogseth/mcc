@@ -191,12 +191,12 @@ mod tests {
 
     #[test]
     fn unicode() {
-        let raw = "return _æôπ_üµ2";
+        let raw = "return _æôπ_üµ2_京แðİ";
         let tokens = run(raw).unwrap();
 
         let expected = [
             Token::Keyword(Keyword::Return),
-            Token::Identifier(String::from("_æôπ_üµ2")),
+            Token::Identifier(String::from("_æôπ_üµ2_京แðİ")),
         ];
 
         assert_eq!(tokens, expected);
