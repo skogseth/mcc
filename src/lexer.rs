@@ -7,8 +7,49 @@ pub fn run(content: &str) -> Result<Vec<Token>, anyhow::Error> {
 
     let mut tokens = Vec::new();
     while let Some(c) = chars.next() {
+        if c.is_whitespace() {
+            continue;
+        }
+
+        // If we encounter any "normal characters" then we have found an identifier
+        if c.is_alphabetic() || c == '_' {
+            let mut extracted = String::from(c);
+
+            // Important that we allow numbers here, but not in the initial position ^
+            while let Some(c) = chars.next_if(|c| c.is_alphanumeric() || *c == '_') {
+                extracted.push(c);
+            }
+
+            let token = match extracted.parse::<Keyword>() {
+                Ok(keyword) => Token::Keyword(keyword),
+                Err(()) => Token::Identifier(extracted),
+            };
+
+            tokens.push(token);
+            continue;
+        }
+
         match c {
-            _ if c.is_whitespace() => continue,
+            '0'..='9' => {
+                let mut extracted = String::from(c);
+                loop {
+                    match chars.peek() {
+                        Some('0'..='9') => {
+                            let c = chars.next().unwrap();
+                            extracted.push(c);
+                        }
+
+                        Some(c) if c.is_alphabetic() => {
+                            return Err(anyhow!("Bad token found: {c}"))
+                        }
+
+                        Some(_) | None => break,
+                    }
+                }
+
+                let parsed: i64 = extracted.parse().unwrap();
+                tokens.push(Token::Constant(parsed));
+            }
 
             '(' => tokens.push(Token::OpenParenthesis),
             ')' => tokens.push(Token::CloseParenthesis),
@@ -61,45 +102,6 @@ pub fn run(content: &str) -> Result<Vec<Token>, anyhow::Error> {
                 Some(_) => tokens.push(Token::Operator(Operator::GreaterThanOrEqual)),
                 None => tokens.push(Token::Operator(Operator::GreaterThan)),
             },
-
-            // If we encounter any "normal characters" then we have found an identifier
-            'a'..='z' | 'A'..='Z' | '_' => {
-                let mut extracted = String::from(c);
-
-                // Important that we allow numbers here, but not in the initial position ^
-                while let Some('a'..='z' | 'A'..='Z' | '_' | '0'..='9') = chars.peek() {
-                    let c = chars.next().unwrap();
-                    extracted.push(c);
-                }
-
-                let token = match extracted.parse::<Keyword>() {
-                    Ok(keyword) => Token::Keyword(keyword),
-                    Err(()) => Token::Identifier(extracted),
-                };
-
-                tokens.push(token);
-            }
-
-            '0'..='9' => {
-                let mut extracted = String::from(c);
-                loop {
-                    match chars.peek() {
-                        Some('0'..='9') => {
-                            let c = chars.next().unwrap();
-                            extracted.push(c);
-                        }
-
-                        Some(c) if c.is_alphabetic() => {
-                            return Err(anyhow!("Bad token found: {c}"))
-                        }
-
-                        Some(_) | None => break,
-                    }
-                }
-
-                let parsed: i64 = extracted.parse().unwrap();
-                tokens.push(Token::Constant(parsed));
-            }
 
             c => return Err(anyhow!("No matching token found for {c}")),
         }
@@ -163,4 +165,40 @@ pub enum Operator {
     GreaterThan,        // >
     LessThanOrEqual,    // <=
     GreaterThanOrEqual, // <=
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn statement() {
+        let raw = "return var_1 * (-490)";
+        let tokens = run(raw).unwrap();
+
+        let expected = [
+            Token::Keyword(Keyword::Return),
+            Token::Identifier(String::from("var_1")),
+            Token::Operator(Operator::Asterisk),
+            Token::OpenParenthesis,
+            Token::Operator(Operator::Minus),
+            Token::Constant(490),
+            Token::CloseParenthesis,
+        ];
+
+        assert_eq!(tokens, expected);
+    }
+
+    #[test]
+    fn unicode() {
+        let raw = "return _æôπ_üµ2";
+        let tokens = run(raw).unwrap();
+
+        let expected = [
+            Token::Keyword(Keyword::Return),
+            Token::Identifier(String::from("_æôπ_üµ2")),
+        ];
+
+        assert_eq!(tokens, expected);
+    }
 }
