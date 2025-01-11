@@ -76,7 +76,7 @@ pub fn run(content: &str) -> Result<Vec<Token>, anyhow::Error> {
 
             // Could be either "not" ('!') or "not equal" ('!=')
             '!' => match chars.next_if(|c| *c == '=') {
-                Some(_) => tokens.push(Token::Operator(Operator::NotEquals)),
+                Some(_) => tokens.push(Token::Operator(Operator::NotEqual)),
                 None => tokens.push(Token::Operator(Operator::Not)),
             },
 
@@ -90,16 +90,16 @@ pub fn run(content: &str) -> Result<Vec<Token>, anyhow::Error> {
             },
 
             '=' => match chars.next_if(|c| *c == '=') {
-                Some(_) => tokens.push(Token::Operator(Operator::Equals)),
+                Some(_) => tokens.push(Token::Operator(Operator::Equal)),
                 None => return Err(anyhow!("assignment operator ('=') not supported")),
             },
 
             '<' => match chars.next_if(|c| *c == '=') {
-                Some(_) => tokens.push(Token::Operator(Operator::LessThanOrEqual)),
+                Some(_) => tokens.push(Token::Operator(Operator::LessOrEqual)),
                 None => tokens.push(Token::Operator(Operator::LessThan)),
             },
             '>' => match chars.next_if(|c| *c == '=') {
-                Some(_) => tokens.push(Token::Operator(Operator::GreaterThanOrEqual)),
+                Some(_) => tokens.push(Token::Operator(Operator::GreaterOrEqual)),
                 None => tokens.push(Token::Operator(Operator::GreaterThan)),
             },
 
@@ -159,12 +159,12 @@ pub enum Operator {
     And, // &&
     Or,  // ||
 
-    Equals,             // ==
-    NotEquals,          // !=
-    LessThan,           // <
-    GreaterThan,        // >
-    LessThanOrEqual,    // <=
-    GreaterThanOrEqual, // <=
+    Equal,          // ==
+    NotEqual,       // !=
+    LessThan,       // <
+    GreaterThan,    // >
+    LessOrEqual,    // <=
+    GreaterOrEqual, // <=
 }
 
 #[cfg(test)]

@@ -117,6 +117,8 @@ impl Instruction {
                     BinaryOperator::Add => binary_op!(crate::assembly::BinaryOperator::Add),
                     BinaryOperator::Subtract => binary_op!(crate::assembly::BinaryOperator::Sub),
                     BinaryOperator::Multiply => binary_op!(crate::assembly::BinaryOperator::Mul),
+
+                    _ => unimplemented!("can't generate tacky for these operations yet"),
                 }
             }
         }
@@ -152,6 +154,7 @@ impl UnaryOperator {
         match self {
             Self::Complement => crate::assembly::UnaryOperator::Not,
             Self::Negate => crate::assembly::UnaryOperator::Neg,
+            Self::Not => unimplemented!("can't generate assembly for not"),
         }
     }
 }

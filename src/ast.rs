@@ -190,6 +190,10 @@ impl Expression {
                 UnaryOperator::Complement,
                 Box::new(Self::parse_factor(tokens)?),
             )),
+            Some(Token::Operator(Operator::Not)) => Ok(Self::Unary(
+                UnaryOperator::Not,
+                Box::new(Self::parse_factor(tokens)?),
+            )),
             Some(Token::Operator(op)) => Err(anyhow!("operator {op:?} not implemented")),
 
             Some(Token::OpenParenthesis) => {
@@ -244,33 +248,65 @@ impl Expression {
 pub enum UnaryOperator {
     Complement,
     Negate,
+    Not,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOperator {
+    // Arithmetic
     Add,
     Subtract,
     Multiply,
     Divide,
     Remainder,
+
+    // Logical
+    And,
+    Or,
+
+    // Equality
+    Equal,
+    NotEqual,
+    LessThan,
+    LessOrEqual,
+    GreaterThan,
+    GreaterOrEqual,
 }
 
 impl BinaryOperator {
     fn parse(token: &Token) -> Option<Self> {
         match token {
+            // Arithmetic
             Token::Operator(Operator::Plus) => Some(BinaryOperator::Add),
             Token::Operator(Operator::Minus) => Some(BinaryOperator::Subtract),
             Token::Operator(Operator::Asterisk) => Some(BinaryOperator::Multiply),
             Token::Operator(Operator::Slash) => Some(BinaryOperator::Divide),
             Token::Operator(Operator::Percent) => Some(BinaryOperator::Remainder),
+
+            // Logical
+            Token::Operator(Operator::And) => Some(BinaryOperator::And),
+            Token::Operator(Operator::Or) => Some(BinaryOperator::Or),
+
+            // Equality
+            Token::Operator(Operator::Equal) => Some(BinaryOperator::Equal),
+            Token::Operator(Operator::NotEqual) => Some(BinaryOperator::NotEqual),
+            Token::Operator(Operator::LessThan) => Some(BinaryOperator::LessThan),
+            Token::Operator(Operator::LessOrEqual) => Some(BinaryOperator::LessOrEqual),
+            Token::Operator(Operator::GreaterThan) => Some(BinaryOperator::GreaterThan),
+            Token::Operator(Operator::GreaterOrEqual) => Some(BinaryOperator::GreaterOrEqual),
+
             _ => return None,
         }
     }
 
     fn precedence(self) -> u32 {
         match self {
-            BinaryOperator::Add | BinaryOperator::Subtract => 45,
-            BinaryOperator::Multiply | BinaryOperator::Divide | BinaryOperator::Remainder => 50,
+            Self::Multiply | Self::Divide | Self::Remainder => 50,
+            Self::Add | Self::Subtract => 45,
+            Self::LessThan | Self::LessOrEqual | Self::GreaterThan | Self::GreaterOrEqual => 35,
+            Self::Equal | Self::NotEqual => 30,
+            Self::And => 10,
+            Self::Or => 5,
         }
     }
 }
