@@ -77,13 +77,39 @@ impl Instruction {
                 crate::assembly::Instruction::Ret,
             ],
 
-            Self::Unary { op, src, dst } => vec![
-                crate::assembly::Instruction::Mov {
-                    src: src.assembly(),
-                    dst: dst.clone().assembly(),
-                },
-                crate::assembly::Instruction::Unary(op.assembly(), dst.assembly()),
-            ],
+            Self::Unary { op, src, dst } => {
+                macro_rules! unary_op {
+                    ($unary_op:expr) => {
+                        vec![
+                            crate::assembly::Instruction::Mov {
+                                src: src.assembly(),
+                                dst: dst.clone().assembly(),
+                            },
+                            crate::assembly::Instruction::Unary($unary_op, dst.assembly()),
+                        ]
+                    };
+                }
+
+                match op {
+                    UnaryOperator::Complement => unary_op!(crate::assembly::UnaryOperator::Not),
+                    UnaryOperator::Negate => unary_op!(crate::assembly::UnaryOperator::Neg),
+
+                    UnaryOperator::Not => vec![
+                        crate::assembly::Instruction::Cmp(
+                            crate::assembly::Operand::Imm(0),
+                            src.assembly(),
+                        ),
+                        crate::assembly::Instruction::Mov {
+                            src: crate::assembly::Operand::Imm(0),
+                            dst: dst.clone().assembly(),
+                        },
+                        crate::assembly::Instruction::SetCC(
+                            crate::assembly::CondCode::E,
+                            dst.assembly(),
+                        ),
+                    ],
+                }
+            }
 
             Self::Binary {
                 op,
@@ -126,6 +152,19 @@ impl Instruction {
                     };
                 }
 
+                macro_rules! relational_op {
+                    ($cc:expr) => {
+                        vec![
+                            crate::assembly::Instruction::Cmp(src_2.assembly(), src_1.assembly()),
+                            crate::assembly::Instruction::Mov {
+                                src: crate::assembly::Operand::Imm(0),
+                                dst: dst.clone().assembly(),
+                            },
+                            crate::assembly::Instruction::SetCC($cc, dst.assembly()),
+                        ]
+                    };
+                }
+
                 match op {
                     BinaryOperator::Divide => idiv!(crate::assembly::Register::Ax),
                     BinaryOperator::Remainder => idiv!(crate::assembly::Register::Dx),
@@ -138,11 +177,36 @@ impl Instruction {
                         panic!("can't generate tacky for `&&` and `||`");
                     }
 
-                    _ => unimplemented!("can't generate tacky for these operations yet"),
+                    BinaryOperator::Equal => relational_op!(crate::assembly::CondCode::E),
+                    BinaryOperator::NotEqual => relational_op!(crate::assembly::CondCode::NE),
+                    BinaryOperator::LessThan => relational_op!(crate::assembly::CondCode::L),
+                    BinaryOperator::GreaterThan => relational_op!(crate::assembly::CondCode::G),
+                    BinaryOperator::LessOrEqual => relational_op!(crate::assembly::CondCode::LE),
+                    BinaryOperator::GreaterOrEqual => relational_op!(crate::assembly::CondCode::GE),
                 }
             }
 
-            _ => unimplemented!("can't generate tacky for these instructions yet"),
+            Self::Jump { target } => vec![crate::assembly::Instruction::Jmp(target)],
+            Self::JumpIfZero { condition, target } => vec![
+                crate::assembly::Instruction::Cmp(
+                    crate::assembly::Operand::Imm(0),
+                    condition.assembly(),
+                ),
+                crate::assembly::Instruction::JmpCC(crate::assembly::CondCode::E, target),
+            ],
+            Self::JumpIfNotZero { condition, target } => vec![
+                crate::assembly::Instruction::Cmp(
+                    crate::assembly::Operand::Imm(0),
+                    condition.assembly(),
+                ),
+                crate::assembly::Instruction::JmpCC(crate::assembly::CondCode::NE, target),
+            ],
+
+            Self::Copy { src, dst } => vec![crate::assembly::Instruction::Mov {
+                src: src.assembly(),
+                dst: dst.assembly(),
+            }],
+            Self::Label(label) => vec![crate::assembly::Instruction::Label(label)],
         }
     }
 }
@@ -168,15 +232,5 @@ pub struct Variable(pub Identifier);
 impl Variable {
     pub fn assembly(self) -> crate::assembly::Operand {
         crate::assembly::Operand::Pseudo(self.0)
-    }
-}
-
-impl UnaryOperator {
-    pub fn assembly(self) -> crate::assembly::UnaryOperator {
-        match self {
-            Self::Complement => crate::assembly::UnaryOperator::Not,
-            Self::Negate => crate::assembly::UnaryOperator::Neg,
-            Self::Not => unimplemented!("can't generate assembly for not"),
-        }
     }
 }

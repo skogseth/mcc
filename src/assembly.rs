@@ -51,8 +51,13 @@ pub enum Instruction {
     Mov { src: Operand, dst: Operand },
     Unary(UnaryOperator, Operand),
     Binary(BinaryOperator, Operand, Operand),
+    Cmp(Operand, Operand),
     Idiv(Operand),
     Cdq,
+    Jmp(Identifier),
+    JmpCC(CondCode, Identifier),
+    SetCC(CondCode, Operand),
+    Label(Identifier),
     Ret,
 }
 
@@ -70,6 +75,7 @@ impl std::fmt::Display for Instruction {
                 writeln!(f, "\tret")?;
                 Ok(())
             }
+            _ => unimplemented!("can't emit code for assembly instruction {self:?}"),
         }
     }
 }
@@ -128,6 +134,16 @@ impl std::fmt::Display for Operand {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum CondCode {
+    E,
+    NE,
+    G,
+    GE,
+    L,
+    LE,
+}
+
 #[derive(Debug, Clone)]
 pub enum Register {
     Ax,
@@ -170,10 +186,22 @@ pub fn replace_pseudo_registers(instructions: &mut [Instruction]) -> i64 {
                 update_register(op_2);
             }
 
+            Instruction::Cmp(op_1, op_2) => {
+                update_register(op_1);
+                update_register(op_2);
+            }
+
+            Instruction::SetCC(_, op) => update_register(op),
+
             Instruction::Idiv(op) => update_register(op),
 
             // No pseudo-registers to change here
-            Instruction::Cdq | Instruction::Ret => {}
+            Instruction::Cdq
+            | Instruction::Jmp(_)
+            | Instruction::JmpCC(_, _)
+            | Instruction::Label(_) 
+            | Instruction::Ret
+            /* --- */ => {}
         }
     }
 
@@ -220,6 +248,21 @@ pub fn fix_move_instructions(instructions: Vec<Instruction>) -> Vec<Instruction>
                     src: Operand::Register(Register::R11),
                     dst,
                 },
+            ],
+
+            Instruction::Cmp(l @ Operand::Stack(_), r @ Operand::Stack(_)) => vec![
+                Instruction::Mov {
+                    src: l,
+                    dst: Operand::Register(Register::R10),
+                },
+                Instruction::Cmp(Operand::Register(Register::R10), r),
+            ],
+            Instruction::Cmp(l, r @ Operand::Imm(_)) => vec![
+                Instruction::Mov {
+                    src: r,
+                    dst: Operand::Register(Register::R11),
+                },
+                Instruction::Cmp(l, Operand::Register(Register::R11)),
             ],
 
             Instruction::Idiv(src @ Operand::Imm(_)) => vec![
