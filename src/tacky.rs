@@ -48,6 +48,22 @@ pub enum Instruction {
         src_2: Value,
         dst: Variable,
     },
+    Copy {
+        src: Value,
+        dst: Variable, // ?
+    },
+    Jump {
+        target: Identifier,
+    },
+    JumpIfZero {
+        condition: Value,
+        target: Identifier,
+    },
+    JumpIfNotZero {
+        condition: Value,
+        target: Identifier,
+    },
+    Label(Identifier),
 }
 
 impl Instruction {
@@ -118,9 +134,15 @@ impl Instruction {
                     BinaryOperator::Subtract => binary_op!(crate::assembly::BinaryOperator::Sub),
                     BinaryOperator::Multiply => binary_op!(crate::assembly::BinaryOperator::Mul),
 
+                    BinaryOperator::And | BinaryOperator::Or => {
+                        panic!("can't generate tacky for `&&` and `||`");
+                    }
+
                     _ => unimplemented!("can't generate tacky for these operations yet"),
                 }
             }
+
+            _ => unimplemented!("can't generate tacky for these instructions yet"),
         }
     }
 }

@@ -34,6 +34,13 @@ impl Identifier {
         assert_ne!(value, usize::MAX, "max number of temp values exceeded");
         Self(format!("tmp.{value}"))
     }
+
+    pub fn new_label(prefix: &str) -> Self {
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let value = COUNTER.fetch_add(1, Ordering::Relaxed);
+        assert_ne!(value, usize::MAX, "max number of temp values exceeded");
+        Self(format!("{prefix}.{value}"))
+    }
 }
 
 impl std::fmt::Display for Identifier {
@@ -213,7 +220,8 @@ impl Expression {
 
     fn emit_tacky(&self, instructions: &mut Vec<crate::tacky::Instruction>) -> crate::tacky::Value {
         match self {
-            Self::Constant(c) => return crate::tacky::Value::Constant(*c),
+            Self::Constant(c) => crate::tacky::Value::Constant(*c),
+
             Self::Unary(unary_op, expr) => {
                 let src = expr.emit_tacky(instructions);
                 let dst = crate::tacky::Variable(Identifier::new_temp());
@@ -226,6 +234,80 @@ impl Expression {
 
                 crate::tacky::Value::Variable(dst)
             }
+
+            Self::Binary(BinaryOperator::And, expr_1, expr_2) => {
+                let false_label = Identifier::new_label("false_label");
+                let end = Identifier::new_label("end");
+
+                let val_1 = expr_1.emit_tacky(instructions);
+                instructions.push(crate::tacky::Instruction::JumpIfZero {
+                    condition: val_1,
+                    target: false_label.clone(),
+                });
+
+                let val_2 = expr_2.emit_tacky(instructions);
+                instructions.push(crate::tacky::Instruction::JumpIfZero {
+                    condition: val_2,
+                    target: false_label.clone(),
+                });
+                let dst = crate::tacky::Variable(Identifier::new_temp());
+
+                instructions.extend_from_slice(&[
+                    crate::tacky::Instruction::Copy {
+                        src: crate::tacky::Value::Constant(1),
+                        dst: dst.clone(),
+                    },
+                    crate::tacky::Instruction::Jump {
+                        target: end.clone(),
+                    },
+                    crate::tacky::Instruction::Label(false_label),
+                    crate::tacky::Instruction::Copy {
+                        src: crate::tacky::Value::Constant(0),
+                        dst: dst.clone(),
+                    },
+                    crate::tacky::Instruction::Label(end),
+                ]);
+
+                crate::tacky::Value::Variable(dst)
+            }
+
+            Self::Binary(BinaryOperator::Or, expr_1, expr_2) => {
+                let true_label = Identifier::new_label("true_label");
+                let end = Identifier::new_label("end");
+
+                let val_1 = expr_1.emit_tacky(instructions);
+                instructions.push(crate::tacky::Instruction::JumpIfNotZero {
+                    condition: val_1,
+                    target: true_label.clone(),
+                });
+
+                let val_2 = expr_2.emit_tacky(instructions);
+                instructions.push(crate::tacky::Instruction::JumpIfNotZero {
+                    condition: val_2,
+                    target: true_label.clone(),
+                });
+
+                let dst = crate::tacky::Variable(Identifier::new_temp());
+
+                instructions.extend_from_slice(&[
+                    crate::tacky::Instruction::Copy {
+                        src: crate::tacky::Value::Constant(0),
+                        dst: dst.clone(),
+                    },
+                    crate::tacky::Instruction::Jump {
+                        target: end.clone(),
+                    },
+                    crate::tacky::Instruction::Label(true_label),
+                    crate::tacky::Instruction::Copy {
+                        src: crate::tacky::Value::Constant(1),
+                        dst: dst.clone(),
+                    },
+                    crate::tacky::Instruction::Label(end),
+                ]);
+
+                crate::tacky::Value::Variable(dst)
+            }
+
             Self::Binary(binary_op, expr_1, expr_2) => {
                 let val_1 = expr_1.emit_tacky(instructions);
                 let val_2 = expr_2.emit_tacky(instructions);
