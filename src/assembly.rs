@@ -61,21 +61,36 @@ pub enum Instruction {
     Ret,
 }
 
+// TODO: Avoid allocation here
+fn local_label(raw_label: &Identifier) -> String {
+    if cfg!(target_os = "macos") {
+        format!("L{raw_label}")
+    } else if cfg!(target_os = "linux") {
+        format!(".L{raw_label}")
+    } else {
+        panic!("unsupported operating system")
+    }
+}
+
 impl std::fmt::Display for Instruction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Mov { src, dst } => writeln!(f, "\tmovl\t{src}, {dst}"),
             Self::Unary(op, dst) => writeln!(f, "\t{op}\t{dst}"),
             Self::Binary(op, src, dst) => writeln!(f, "\t{op}\t{src}, {dst}"),
+            Self::Cmp(op_1, op_2) => writeln!(f, "\tcmpl\t{op_1}, {op_2}"),
             Self::Idiv(dst) => writeln!(f, "\tidivl\t{dst}"),
             Self::Cdq => writeln!(f, "\tcdq"),
+            Self::Jmp(raw_label) => writeln!(f, "\tjmp\t{}", local_label(raw_label)) ,
+            Self::JmpCC(cc, raw_label) => writeln!(f, "\tj{cc}\t{}", local_label(raw_label)),
+            Self::SetCC(cc, op) => writeln!(f, "\tset{cc}\t{op}"),
+            Self::Label(raw_label) => writeln!(f, "{}:", local_label(raw_label)),
             Self::Ret => {
                 writeln!(f, "\tmovq\t%rbp, %rsp")?;
                 writeln!(f, "\tpopq\t%rbp")?;
                 writeln!(f, "\tret")?;
                 Ok(())
             }
-            _ => unimplemented!("can't emit code for assembly instruction {self:?}"),
         }
     }
 }
@@ -142,6 +157,19 @@ pub enum CondCode {
     GE,
     L,
     LE,
+}
+
+impl std::fmt::Display for CondCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::E => f.write_str("e"),
+            Self::NE => f.write_str("ne"),
+            Self::L => f.write_str("l"),
+            Self::LE => f.write_str("le"),
+            Self::G => f.write_str("g"),
+            Self::GE => f.write_str("ge"),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

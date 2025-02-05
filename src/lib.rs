@@ -37,7 +37,7 @@ pub fn compiler(input: &Path, output: &Path, options: Options) -> Result<bool, a
         return Ok(false);
     }
 
-    println!("AST:\n{program:#?}\n");
+    // println!("AST:\n{program:#?}\n");
 
     let tacky = program.emit_tacky();
     if options.tacky {
