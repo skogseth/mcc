@@ -91,7 +91,7 @@ pub fn run(content: &str) -> Result<Vec<Token>, anyhow::Error> {
 
             '=' => match chars.next_if(|c| *c == '=') {
                 Some(_) => tokens.push(Token::Operator(Operator::Equal)),
-                None => return Err(anyhow!("assignment operator ('=') not supported")),
+                None => tokens.push(Token::Operator(Operator::Assignment)),
             },
 
             '<' => match chars.next_if(|c| *c == '=') {
@@ -144,6 +144,8 @@ impl FromStr for Keyword {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Operator {
+    Assignment,
+
     Plus,  // +
     Minus, // -
 
