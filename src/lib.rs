@@ -29,29 +29,27 @@ pub fn compiler(input: &Path, output: &Path, options: Options) -> Result<bool, a
 
     let tokens = lexer::run(&content)?;
     if options.lex {
+        println!("{tokens:?}");
         return Ok(false);
     }
 
     let program = ast::parse(tokens)?;
     if options.parse {
+        println!("{program:#?}");
         return Ok(false);
     }
-
-    // println!("AST:\n{program:#?}\n");
 
     let tacky = program.emit_tacky();
     if options.tacky {
+        println!("{tacky:#?}");
         return Ok(false);
     }
-
-    // println!("Tacky:\n{tacky:#?}\n");
 
     let assembly = tacky.assembly();
     if options.codegen {
+        println!("{assembly:#?}");
         return Ok(false);
     }
-
-    // println!("Assembly (structured):\n{assembly:#?}\n");
 
     let buf = format!("{assembly}");
     std::fs::write(output, &buf[..])?;

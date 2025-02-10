@@ -2,14 +2,20 @@ use std::sync::atomic::Ordering;
 use std::vec::IntoIter;
 use std::{iter::Peekable, sync::atomic::AtomicUsize};
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 
 use crate::lexer::{Keyword, Operator, Token};
 
 pub fn parse(tokens: Vec<Token>) -> Result<Program, anyhow::Error> {
     let mut tokens = tokens.into_iter().peekable();
 
-    let main = Function::parse(&mut tokens)?;
+    let main = match Function::parse(&mut tokens) {
+        Ok(func) => func,
+        Err(e) => {
+            let tokens_left: Vec<_> = tokens.collect();
+            return Err(e).with_context(|| format!("tokens left: {tokens_left:?}"));
+        }
+    };
     assert_eq!(main.name.0.as_str(), "main");
 
     let remaining_tokens: Vec<Token> = tokens.collect();
@@ -61,7 +67,7 @@ impl Program {
 #[derive(Debug, Clone)]
 pub struct Function {
     name: Identifier,
-    body: Statement,
+    body: Vec<BlockItem>,
 }
 
 impl Function {
@@ -72,45 +78,51 @@ impl Function {
             None => return Err(anyhow!("no return_type found")),
         }
 
-        let function_name = match tokens.next() {
+        let name = match tokens.next() {
             Some(Token::Identifier(s)) => Identifier(s),
             Some(t) => return Err(anyhow!("failed to find function identifier, found {t:?}")),
             None => return Err(anyhow!("failed to find function identifier")),
         };
 
         if !matches!(tokens.next(), Some(Token::OpenParenthesis)) {
-            return Err(anyhow!(
-                "no open-parenthesis found for function {function_name}"
-            ));
+            return Err(anyhow!("no open-parenthesis found for function {name}"));
         }
 
         assert!(matches!(tokens.next(), Some(Token::Keyword(Keyword::Void))));
 
         if !matches!(tokens.next(), Some(Token::CloseParenthesis)) {
-            return Err(anyhow!(
-                "no close-parenthesis found for function {function_name}"
-            ));
+            return Err(anyhow!("no close-parenthesis found for function {name}"));
         }
 
         if !matches!(tokens.next(), Some(Token::OpenBrace)) {
-            return Err(anyhow!("No open brace found for function {function_name}"));
+            return Err(anyhow!("No open brace found for function {name}"));
         }
 
-        let statement = Statement::parse(tokens)?;
+        let mut body = Vec::new();
+        loop {
+            match tokens.peek() {
+                Some(Token::CloseBrace) => break,
+                Some(_) => {
+                    let block_item = BlockItem::parse(tokens)
+                        .with_context(|| format!("body parsed: {body:?}"))?;
+                    body.push(block_item);
+                }
+                None => return Err(anyhow!("No close brace found for function {name}")),
+            }
+        }
 
         if !matches!(tokens.next(), Some(Token::CloseBrace)) {
-            return Err(anyhow!("No close brace found for function {function_name}"));
+            return Err(anyhow!("No close brace found for function {name}"));
         }
 
-        Ok(Function {
-            name: function_name,
-            body: statement,
-        })
+        Ok(Function { name, body })
     }
 
     fn emit_tacky(self) -> crate::tacky::Function {
         let mut instructions = Vec::new();
-        self.body.emit_tacky(&mut instructions);
+        for block_item in self.body {
+            block_item.emit_tacky(&mut instructions);
+        }
 
         crate::tacky::Function {
             name: self.name,
@@ -120,26 +132,102 @@ impl Function {
 }
 
 #[derive(Debug, Clone)]
+pub enum BlockItem {
+    S(Statement),
+    D(Declaration),
+}
+
+impl BlockItem {
+    fn parse(tokens: &mut TokenIter) -> Result<Self, anyhow::Error> {
+        match tokens.peek() {
+            Some(Token::Keyword(Keyword::Int)) => Declaration::parse(tokens).map(BlockItem::D),
+            Some(_) => Statement::parse(tokens).map(BlockItem::S),
+            None => Err(anyhow!("No token found for block item")),
+        }
+    }
+
+    fn emit_tacky(self, instructions: &mut Vec<crate::tacky::Instruction>) {
+        todo!()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Declaration {
+    pub name: Identifier,
+    pub init: Option<Expression>,
+}
+
+impl Declaration {
+    fn parse(tokens: &mut TokenIter) -> Result<Self, anyhow::Error> {
+        let _typ = tokens.next().expect("can't parse decleration without type");
+
+        const MESSAGE_1: &str = "expected type to be followed by identifier in declaration";
+        let name = match tokens.next() {
+            Some(Token::Identifier(identifier)) => Identifier(identifier),
+            Some(token) => return Err(anyhow!("{MESSAGE_1}, but found {token:?}")),
+            None => return Err(anyhow!("{MESSAGE_1}, but no token was found")),
+        };
+
+        const MESSAGE_2: &str =
+            "expected identifier in declaration to be followed by either assignment or semicolon";
+        match tokens.next() {
+            Some(Token::Operator(Operator::Assignment)) => {
+                let expr = Expression::parse(tokens)?;
+                remove_semicolon(tokens)?;
+                Ok(Self {
+                    name,
+                    init: Some(expr),
+                })
+            }
+            Some(Token::Semicolon) => Ok(Self { name, init: None }),
+
+            Some(token) => Err(anyhow!("{MESSAGE_2}, but found {token:?}")),
+            None => Err(anyhow!("{MESSAGE_2}, but no token was found")),
+        }
+    }
+
+    fn emit_tacky(self, instructions: &mut Vec<crate::tacky::Instruction>) {
+        todo!()
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum Statement {
     Return(Expression),
+    Expression(Expression),
+    Null,
+}
+
+fn remove_semicolon(tokens: &mut TokenIter) -> Result<(), anyhow::Error> {
+    match tokens.next() {
+        Some(Token::Semicolon) => Ok(()),
+        Some(t) => Err(anyhow!("expected semicolon (';'), found {t:?}")),
+        None => Err(anyhow!("expected semicolon (';'), but no token was found")),
+    }
 }
 
 impl Statement {
     fn parse(tokens: &mut TokenIter) -> Result<Self, anyhow::Error> {
-        let remove_semicolon = |tokens: &mut TokenIter| match tokens.next() {
-            Some(Token::Semicolon) => Ok(()),
-            Some(t) => Err(anyhow!("expected semicolon (';'), found {t:?}")),
-            None => Err(anyhow!("expected semicolon (';'), but no token was found")),
-        };
-
-        match tokens.next() {
+        match tokens.peek() {
             Some(Token::Keyword(Keyword::Return)) => {
+                let _ = tokens.next().expect("token must be return keyword");
                 let expr = Expression::parse(tokens)?;
                 remove_semicolon(tokens)?;
-                Ok(Statement::Return(expr))
+                Ok(Self::Return(expr))
             }
 
-            Some(t) => Err(anyhow!("unexpected token found for statement: {t:?}")),
+            Some(Token::Semicolon) => {
+                let _ = tokens.next().expect("token must be semicolon");
+                Ok(Self::Null)
+            }
+
+            Some(_) => {
+                let expr = Expression::parse(tokens)?;
+                remove_semicolon(tokens)
+                    .with_context(|| format!("following expression {expr:?}"))?;
+                Ok(Self::Expression(expr))
+            }
+
             None => Err(anyhow!("no token found for statement")),
         }
     }
@@ -150,6 +238,8 @@ impl Statement {
                 let value = expr.emit_tacky(instructions);
                 instructions.push(crate::tacky::Instruction::Return(value));
             }
+            Self::Expression(expr) => todo!(),
+            Self::Null => todo!(),
         }
     }
 }
@@ -157,8 +247,10 @@ impl Statement {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expression {
     Constant(i64),
+    Var(Identifier),
     Unary(UnaryOperator, Box<Expression>),
     Binary(BinaryOperator, Box<Expression>, Box<Expression>),
+    Assignment(Box<Expression>, Box<Expression>),
 }
 
 impl Expression {
@@ -170,40 +262,56 @@ impl Expression {
         let mut left = Self::parse_factor(tokens)?;
 
         while let Some(bin_op) = tokens.peek().and_then(BinaryOperator::parse) {
+            let precedence = bin_op.precedence();
+
             // Check precedence of operator
-            if bin_op.precedence() < min_prec {
+            if precedence < min_prec {
                 break;
             }
 
             // Then remember to progress the iterator
             let _ = tokens.next();
 
-            let right = Self::parse_expr(tokens, bin_op.precedence() + 1)?;
-            left = Expression::Binary(bin_op, Box::new(left), Box::new(right));
+            match bin_op {
+                BinaryOperator::Assignment => {
+                    let right = Self::parse_expr(tokens, precedence)?;
+                    left = Expression::Assignment(Box::new(left), Box::new(right));
+                }
+                _ => {
+                    let right = Self::parse_expr(tokens, precedence + 1)?;
+                    left = Expression::Binary(bin_op, Box::new(left), Box::new(right));
+                }
+            }
         }
 
         Ok(left)
     }
 
     fn parse_factor(tokens: &mut TokenIter) -> Result<Self, anyhow::Error> {
-        match tokens.next() {
-            Some(Token::Constant(i)) => Ok(Expression::Constant(i)),
+        let Some(next_token) = tokens.next() else {
+            return Err(anyhow!("no token found for expression"));
+        };
 
-            Some(Token::Operator(Operator::Minus)) => Ok(Self::Unary(
+        match next_token {
+            Token::Constant(i) => Ok(Expression::Constant(i)),
+
+            Token::Identifier(identifier) => Ok(Expression::Var(Identifier(identifier))),
+
+            // --- Parse unary operators ---
+            Token::Operator(Operator::Minus) => Ok(Self::Unary(
                 UnaryOperator::Negate,
                 Box::new(Self::parse_factor(tokens)?),
             )),
-            Some(Token::Operator(Operator::Tilde)) => Ok(Self::Unary(
+            Token::Operator(Operator::Tilde) => Ok(Self::Unary(
                 UnaryOperator::Complement,
                 Box::new(Self::parse_factor(tokens)?),
             )),
-            Some(Token::Operator(Operator::Not)) => Ok(Self::Unary(
+            Token::Operator(Operator::Not) => Ok(Self::Unary(
                 UnaryOperator::Not,
                 Box::new(Self::parse_factor(tokens)?),
             )),
-            Some(Token::Operator(op)) => Err(anyhow!("operator {op:?} not implemented")),
 
-            Some(Token::OpenParenthesis) => {
+            Token::OpenParenthesis => {
                 let expr = Self::parse_expr(tokens, 0)?;
 
                 match tokens.next() {
@@ -213,14 +321,15 @@ impl Expression {
                 }
             }
 
-            Some(t) => Err(anyhow!("unknown token found for expression: {t:?}")),
-            None => Err(anyhow!("no token found for expression")),
+            t => Err(anyhow!("unknown token found for expression: {t:?}")),
         }
     }
 
     fn emit_tacky(&self, instructions: &mut Vec<crate::tacky::Instruction>) -> crate::tacky::Value {
         match self {
             Self::Constant(c) => crate::tacky::Value::Constant(*c),
+
+            Self::Var(ident) => todo!(),
 
             Self::Unary(unary_op, expr) => {
                 let src = expr.emit_tacky(instructions);
@@ -322,6 +431,8 @@ impl Expression {
 
                 crate::tacky::Value::Variable(dst)
             }
+
+            Self::Assignment(expr_1, expr_2) => todo!(),
         }
     }
 }
@@ -335,6 +446,9 @@ pub enum UnaryOperator {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOperator {
+    // Special
+    Assignment,
+
     // Arithmetic
     Add,
     Subtract,
@@ -358,6 +472,9 @@ pub enum BinaryOperator {
 impl BinaryOperator {
     fn parse(token: &Token) -> Option<Self> {
         match token {
+            // Special
+            Token::Operator(Operator::Assignment) => Some(BinaryOperator::Assignment),
+
             // Arithmetic
             Token::Operator(Operator::Plus) => Some(BinaryOperator::Add),
             Token::Operator(Operator::Minus) => Some(BinaryOperator::Subtract),
@@ -389,6 +506,7 @@ impl BinaryOperator {
             Self::Equal | Self::NotEqual => 30,
             Self::And => 10,
             Self::Or => 5,
+            Self::Assignment => 1,
         }
     }
 }

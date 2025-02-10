@@ -183,6 +183,8 @@ impl Instruction {
                     BinaryOperator::GreaterThan => relational_op!(crate::assembly::CondCode::G),
                     BinaryOperator::LessOrEqual => relational_op!(crate::assembly::CondCode::LE),
                     BinaryOperator::GreaterOrEqual => relational_op!(crate::assembly::CondCode::GE),
+
+                    BinaryOperator::Assignment => todo!(),
                 }
             }
 
