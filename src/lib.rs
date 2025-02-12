@@ -1,7 +1,9 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use clap::Args;
+use lexer::LexerError;
+use thiserror::Error;
 
 mod assembly;
 mod ast;
@@ -24,10 +26,18 @@ pub struct Options {
     pub codegen: bool,
 }
 
-pub fn compiler(input: &Path, output: &Path, options: Options) -> Result<bool, anyhow::Error> {
+#[derive(Debug, Error)]
+pub enum CompilerError {
+    #[error(transparent)]
+    Lexer(#[from] LexerError),
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
+}
+
+pub fn compiler(input: &Path, output: &Path, options: Options) -> Result<bool, CompilerError> {
     let content = std::fs::read_to_string(input).context("failed to read input file")?;
 
-    let tokens = lexer::run(&content)?;
+    let tokens = lexer::run(content)?;
     if options.lex {
         println!("{tokens:?}");
         return Ok(false);
@@ -52,7 +62,7 @@ pub fn compiler(input: &Path, output: &Path, options: Options) -> Result<bool, a
     }
 
     let buf = format!("{assembly}");
-    std::fs::write(output, &buf[..])?;
+    std::fs::write(output, &buf[..]).context("failed to write to output file")?;
 
     Ok(true)
 }
