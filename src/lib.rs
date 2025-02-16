@@ -37,7 +37,7 @@ pub enum CompilerError {
 pub fn compiler(input: &Path, output: &Path, options: Options) -> Result<bool, CompilerError> {
     let content = std::fs::read_to_string(input).context("failed to read input file")?;
 
-    let tokens = lexer::run(content)?;
+    let tokens = lexer::run(&content)?;
     if options.lex {
         println!("{tokens:?}");
         return Ok(false);

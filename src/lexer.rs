@@ -2,10 +2,12 @@ use std::str::FromStr;
 
 use thiserror::Error;
 
-pub fn run(content: String) -> Result<Vec<Token>, LexerError> {
-    let mut iter = content
-        .lines()
-        .enumerate()
+pub fn run(content: &str) -> Result<Vec<Token>, LexerError> {
+    let lines: Vec<(usize, &str)> = content.lines().enumerate().collect();
+
+    let mut iter = lines
+        .iter()
+        .copied()
         .flat_map(|(i, line)| {
             line.chars().enumerate().map(move |(j, char)| CharWithSpan {
                 char,
@@ -14,6 +16,33 @@ pub fn run(content: String) -> Result<Vec<Token>, LexerError> {
             })
         })
         .peekable();
+
+    let find_lines = |char_elem: CharWithSpan| -> LineView {
+        let lower_line_number = usize::saturating_sub(char_elem.line, 2);
+        let correct_line_number = usize::saturating_add(char_elem.line, 1);
+        let upper_line_number =
+            std::cmp::min(usize::saturating_add(char_elem.line, 2), lines.len() - 1);
+
+        let before: Vec<(usize, String)> = lines[lower_line_number..correct_line_number]
+            .iter()
+            .map(|&(i, line): &(usize, &str)| {
+                let i: usize = i;
+                let line: String = line.to_owned();
+                (i, line)
+            })
+            .collect();
+
+        let after: Vec<(usize, String)> = lines[correct_line_number..=upper_line_number]
+            .iter()
+            .map(|&(i, line): &(usize, &str)| {
+                let i: usize = i;
+                let line: String = line.to_owned();
+                (i, line)
+            })
+            .collect();
+
+        LineView { before, after }
+    };
 
     let mut tokens = Vec::new();
     while let Some(c) = iter.next() {
@@ -55,7 +84,7 @@ pub fn run(content: String) -> Result<Vec<Token>, LexerError> {
                             return Err(LexerError {
                                 message: "encountered alphabetic character as part of a number",
                                 char_elem: *c,
-                                file_content: content,
+                                view: find_lines(*c),
                             })
                         }
 
@@ -102,7 +131,7 @@ pub fn run(content: String) -> Result<Vec<Token>, LexerError> {
                     return Err(LexerError {
                         message: "bitwise and ('&') is not supported",
                         char_elem: c,
-                        file_content: content,
+                        view: find_lines(c),
                     })
                 }
             },
@@ -112,7 +141,7 @@ pub fn run(content: String) -> Result<Vec<Token>, LexerError> {
                     return Err(LexerError {
                         message: "bitwise or ('|') is not supported",
                         char_elem: c,
-                        file_content: content,
+                        view: find_lines(c),
                     })
                 }
             },
@@ -135,7 +164,7 @@ pub fn run(content: String) -> Result<Vec<Token>, LexerError> {
                 return Err(LexerError {
                     message: "not a valid token",
                     char_elem: c,
-                    file_content: content,
+                    view: find_lines(c),
                 })
             }
         }
@@ -151,30 +180,22 @@ pub struct CharWithSpan {
     pub position: usize,
 }
 
+#[derive(Debug, Clone)]
+pub struct LineView {
+    pub before: Vec<(usize, String)>,
+    pub after: Vec<(usize, String)>,
+}
+
 #[derive(Debug, Clone, Error)]
 pub struct LexerError {
     pub message: &'static str,
     pub char_elem: CharWithSpan,
-    pub file_content: String,
+    pub view: LineView,
 }
 
 impl std::fmt::Display for LexerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let lines: Vec<(usize, &str)> = self
-            .file_content
-            .lines()
-            .enumerate()
-            .map(|(i, line)| (i + 1, line))
-            .collect();
-
-        let lower_line_number = usize::saturating_sub(self.char_elem.line, 2);
-        let correct_line_number = usize::saturating_add(self.char_elem.line, 1);
-        let upper_line_number = std::cmp::min(
-            usize::saturating_add(self.char_elem.line, 2),
-            lines.len() - 1,
-        );
-
-        for (line_number, line) in &lines[lower_line_number..correct_line_number] {
+        for (line_number, line) in &self.view.before {
             writeln!(f, "{} {}", console::style(line_number).blue(), line)?;
         }
 
@@ -186,7 +207,7 @@ impl std::fmt::Display for LexerError {
             message = console::style(self.message).red(),
         )?;
 
-        for (line_number, line) in &lines[correct_line_number..=upper_line_number] {
+        for (line_number, line) in &self.view.after {
             writeln!(f, "{} {}", console::style(line_number).blue(), line)?;
         }
 
@@ -259,7 +280,7 @@ mod tests {
 
     #[test]
     fn statement() {
-        let raw = String::from("return var_1 * (-490)");
+        let raw = "return var_1 * (-490)";
         let tokens = run(raw).unwrap();
 
         let expected = [
@@ -277,12 +298,13 @@ mod tests {
 
     #[test]
     fn unicode() {
-        let raw = String::from("return _æôπ_üµ2_京แðİ");
-        let tokens = run(raw).unwrap();
+        let identifier = String::from("_æôπ_üµ2_京แðİ");
+        let raw = format!("return {identifier}");
+        let tokens = run(&raw).unwrap();
 
         let expected = [
             Token::Keyword(Keyword::Return),
-            Token::Identifier(String::from("_æôπ_üµ2_京แðİ")),
+            Token::Identifier(identifier),
         ];
 
         assert_eq!(tokens, expected);
