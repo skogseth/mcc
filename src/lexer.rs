@@ -1,15 +1,12 @@
 use std::str::FromStr;
 
-use thiserror::Error;
-
-pub fn run(content: &str) -> Result<Vec<Token>, LexerError> {
-    let lines: Vec<(usize, &str)> = content.lines().enumerate().collect();
-
+pub fn run(lines: &[&str]) -> Result<Vec<TokenElem>, LexerError> {
     let mut iter = lines
         .iter()
         .copied()
+        .enumerate()
         .flat_map(|(i, line)| {
-            line.chars().enumerate().map(move |(j, char)| CharWithSpan {
+            line.chars().enumerate().map(move |(j, char)| CharElem {
                 char,
                 line: i,
                 position: j,
@@ -17,46 +14,25 @@ pub fn run(content: &str) -> Result<Vec<Token>, LexerError> {
         })
         .peekable();
 
-    let find_lines = |char_elem: CharWithSpan| -> LineView {
-        let lower_line_number = usize::saturating_sub(char_elem.line, 2);
-        let correct_line_number = usize::saturating_add(char_elem.line, 1);
-        let upper_line_number =
-            std::cmp::min(usize::saturating_add(char_elem.line, 2), lines.len() - 1);
-
-        let before: Vec<(usize, String)> = lines[lower_line_number..correct_line_number]
-            .iter()
-            .map(|&(i, line): &(usize, &str)| {
-                let i: usize = i;
-                let line: String = line.to_owned();
-                (i, line)
-            })
-            .collect();
-
-        let after: Vec<(usize, String)> = lines[correct_line_number..=upper_line_number]
-            .iter()
-            .map(|&(i, line): &(usize, &str)| {
-                let i: usize = i;
-                let line: String = line.to_owned();
-                (i, line)
-            })
-            .collect();
-
-        LineView { before, after }
-    };
-
-    let mut tokens = Vec::new();
+    let mut tokens: Vec<TokenElem> = Vec::new();
     while let Some(c) = iter.next() {
         if c.char.is_whitespace() {
             continue;
         }
 
         // If we encounter any "normal characters" then we have found an identifier
-        if c.char.is_alphabetic() || c.char == '_' {
+        let token_elem = if c.char.is_alphabetic() || c.char == '_' {
             let mut extracted = String::from(c.char);
+            let mut span = Span {
+                line: c.line,
+                start_position: c.position,
+                end_position: c.position,
+            };
 
             // Important that we allow numbers here, but not in the initial position ^
             while let Some(c) = iter.next_if(|c| c.char.is_alphanumeric() || c.char == '_') {
                 extracted.push(c.char);
+                span.end_position = c.position;
             }
 
             let token = match extracted.parse::<Keyword>() {
@@ -64,155 +40,141 @@ pub fn run(content: &str) -> Result<Vec<Token>, LexerError> {
                 Err(()) => Token::Identifier(extracted),
             };
 
-            tokens.push(token);
-            continue;
-        }
+            TokenElem { token, span }
+        } else if c.char.is_numeric() {
+            let mut extracted = String::from(c.char);
+            let mut span = Span {
+                line: c.line,
+                start_position: c.position,
+                end_position: c.position,
+            };
 
-        match c.char {
-            '0'..='9' => {
-                let mut extracted = String::from(c.char);
-                loop {
-                    match iter.peek() {
-                        Some(CharWithSpan {
-                            char: '0'..='9', ..
-                        }) => {
-                            let c = iter.next().unwrap();
-                            extracted.push(c.char);
-                        }
+            while let Some(c) = iter.next_if(|c| c.char.is_alphanumeric()) {
+                if c.char.is_numeric() {
+                    extracted.push(c.char);
+                    span.end_position = c.position;
+                } else {
+                    return Err(LexerError {
+                        message: "encountered alphabetic character as part of a number",
+                        char_elem: c,
+                    });
+                }
+            }
 
-                        Some(c) if c.char.is_alphabetic() => {
-                            return Err(LexerError {
-                                message: "encountered alphabetic character as part of a number",
-                                char_elem: *c,
-                                view: find_lines(*c),
-                            })
-                        }
+            let token = Token::Constant(extracted.parse().unwrap());
+            TokenElem { token, span }
+        } else {
+            let token = match c.char {
+                '(' => Token::OpenParenthesis,
+                ')' => Token::CloseParenthesis,
+                '{' => Token::OpenBrace,
+                '}' => Token::CloseBrace,
+                ';' => Token::Semicolon,
 
-                        Some(_) | None => break,
+                // This can be either plus ('+') or increment ('++')
+                '+' => match iter.next_if(|c| c.char == '+') {
+                    Some(_) => Token::Operator(Operator::Increment),
+                    None => Token::Operator(Operator::Plus),
+                },
+
+                // This can be either minus ('-') or decrement ('--')
+                '-' => match iter.next_if(|c| c.char == '-') {
+                    Some(_) => Token::Operator(Operator::Decrement),
+                    None => Token::Operator(Operator::Minus),
+                },
+
+                '*' => Token::Operator(Operator::Asterisk),
+                '/' => Token::Operator(Operator::Slash),
+                '%' => Token::Operator(Operator::Percent),
+                '~' => Token::Operator(Operator::Tilde),
+
+                // Could be either "not" ('!') or "not equal" ('!=')
+                '!' => match iter.next_if(|c| c.char == '=') {
+                    Some(_) => Token::Operator(Operator::NotEqual),
+                    None => Token::Operator(Operator::Not),
+                },
+
+                '&' => match iter.next_if(|c| c.char == '&') {
+                    Some(_) => Token::Operator(Operator::And),
+                    None => {
+                        return Err(LexerError {
+                            message: "bitwise and ('&') is not supported",
+                            char_elem: c,
+                        })
                     }
-                }
+                },
+                '|' => match iter.next_if(|c| c.char == '|') {
+                    Some(_) => Token::Operator(Operator::Or),
+                    None => {
+                        return Err(LexerError {
+                            message: "bitwise or ('|') is not supported",
+                            char_elem: c,
+                        })
+                    }
+                },
 
-                let parsed: i64 = extracted.parse().unwrap();
-                tokens.push(Token::Constant(parsed));
-            }
+                '=' => match iter.next_if(|c| c.char == '=') {
+                    Some(_) => Token::Operator(Operator::Equal),
+                    None => Token::Operator(Operator::Assignment),
+                },
 
-            '(' => tokens.push(Token::OpenParenthesis),
-            ')' => tokens.push(Token::CloseParenthesis),
-            '{' => tokens.push(Token::OpenBrace),
-            '}' => tokens.push(Token::CloseBrace),
-            ';' => tokens.push(Token::Semicolon),
+                '<' => match iter.next_if(|c| c.char == '=') {
+                    Some(_) => Token::Operator(Operator::LessOrEqual),
+                    None => Token::Operator(Operator::LessThan),
+                },
+                '>' => match iter.next_if(|c| c.char == '=') {
+                    Some(_) => Token::Operator(Operator::GreaterOrEqual),
+                    None => Token::Operator(Operator::GreaterThan),
+                },
 
-            // This can be either plus ('+') or increment ('++')
-            '+' => match iter.next_if(|c| c.char == '+') {
-                Some(_) => tokens.push(Token::Operator(Operator::Increment)),
-                None => tokens.push(Token::Operator(Operator::Plus)),
-            },
-
-            // This can be either minus ('-') or decrement ('--')
-            '-' => match iter.next_if(|c| c.char == '-') {
-                Some(_) => tokens.push(Token::Operator(Operator::Decrement)),
-                None => tokens.push(Token::Operator(Operator::Minus)),
-            },
-
-            '*' => tokens.push(Token::Operator(Operator::Asterisk)),
-            '/' => tokens.push(Token::Operator(Operator::Slash)),
-            '%' => tokens.push(Token::Operator(Operator::Percent)),
-            '~' => tokens.push(Token::Operator(Operator::Tilde)),
-
-            // Could be either "not" ('!') or "not equal" ('!=')
-            '!' => match iter.next_if(|c| c.char == '=') {
-                Some(_) => tokens.push(Token::Operator(Operator::NotEqual)),
-                None => tokens.push(Token::Operator(Operator::Not)),
-            },
-
-            '&' => match iter.next_if(|c| c.char == '&') {
-                Some(_) => tokens.push(Token::Operator(Operator::And)),
-                None => {
+                _ => {
                     return Err(LexerError {
-                        message: "bitwise and ('&') is not supported",
+                        message: "not a valid token",
                         char_elem: c,
-                        view: find_lines(c),
                     })
                 }
-            },
-            '|' => match iter.next_if(|c| c.char == '|') {
-                Some(_) => tokens.push(Token::Operator(Operator::Or)),
-                None => {
-                    return Err(LexerError {
-                        message: "bitwise or ('|') is not supported",
-                        char_elem: c,
-                        view: find_lines(c),
-                    })
-                }
-            },
+            };
 
-            '=' => match iter.next_if(|c| c.char == '=') {
-                Some(_) => tokens.push(Token::Operator(Operator::Equal)),
-                None => tokens.push(Token::Operator(Operator::Assignment)),
-            },
-
-            '<' => match iter.next_if(|c| c.char == '=') {
-                Some(_) => tokens.push(Token::Operator(Operator::LessOrEqual)),
-                None => tokens.push(Token::Operator(Operator::LessThan)),
-            },
-            '>' => match iter.next_if(|c| c.char == '=') {
-                Some(_) => tokens.push(Token::Operator(Operator::GreaterOrEqual)),
-                None => tokens.push(Token::Operator(Operator::GreaterThan)),
-            },
-
-            _ => {
-                return Err(LexerError {
-                    message: "not a valid token",
-                    char_elem: c,
-                    view: find_lines(c),
-                })
+            TokenElem {
+                token,
+                span: Span {
+                    line: c.line,
+                    start_position: c.position,
+                    end_position: c.position,
+                },
             }
-        }
+        };
+
+        tokens.push(token_elem);
     }
 
     Ok(tokens)
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct CharWithSpan {
+pub struct CharElem {
     pub char: char,
     pub line: usize,
     pub position: usize,
 }
 
 #[derive(Debug, Clone)]
-pub struct LineView {
-    pub before: Vec<(usize, String)>,
-    pub after: Vec<(usize, String)>,
+pub struct TokenElem {
+    pub token: Token,
+    pub span: Span,
 }
 
-#[derive(Debug, Clone, Error)]
+#[derive(Debug, Clone, Copy)]
+pub struct Span {
+    pub line: usize,
+    pub start_position: usize,
+    pub end_position: usize,
+}
+
+#[derive(Debug, Clone)]
 pub struct LexerError {
     pub message: &'static str,
-    pub char_elem: CharWithSpan,
-    pub view: LineView,
-}
-
-impl std::fmt::Display for LexerError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for (line_number, line) in &self.view.before {
-            writeln!(f, "{} {}", console::style(line_number).blue(), line)?;
-        }
-
-        writeln!(
-            f,
-            "- {fill}{marker} {message}",
-            fill = " ".repeat(self.char_elem.position),
-            marker = console::style("^").red(),
-            message = console::style(self.message).red(),
-        )?;
-
-        for (line_number, line) in &self.view.after {
-            writeln!(f, "{} {}", console::style(line_number).blue(), line)?;
-        }
-
-        Ok(())
-    }
+    pub char_elem: CharElem,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -281,7 +243,7 @@ mod tests {
     #[test]
     fn statement() {
         let raw = "return var_1 * (-490)";
-        let tokens = run(raw).unwrap();
+        let tokens: Vec<_> = run(&[raw]).unwrap().into_iter().map(|t| t.token).collect();
 
         let expected = [
             Token::Keyword(Keyword::Return),
@@ -300,7 +262,7 @@ mod tests {
     fn unicode() {
         let identifier = String::from("_æôπ_üµ2_京แðİ");
         let raw = format!("return {identifier}");
-        let tokens = run(&raw).unwrap();
+        let tokens: Vec<_> = run(&[&raw]).unwrap().into_iter().map(|t| t.token).collect();
 
         let expected = [
             Token::Keyword(Keyword::Return),
