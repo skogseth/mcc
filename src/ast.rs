@@ -249,7 +249,7 @@ fn remove_semicolon(tokens: &mut TokenIter) -> Result<(), ParseError> {
     match token_elem.token {
         Token::Semicolon => Ok(()),
         token => Err(ParseError::WrongToken {
-            message: String::from("expected semicolon; found {token:?}"),
+            message: format!("expected semicolon; found {token}"),
             span: token_elem.span,
         }),
     }
@@ -310,7 +310,9 @@ impl Expression {
 
         loop {
             let elem = tokens.peek().ok_or(ParseError::EarlyEnd(""))?;
-            let bin_op = BinaryOperator::parse(&elem.token).unwrap();
+            let Some(bin_op) = BinaryOperator::parse(&elem.token) else {
+                break;
+            };
 
             let precedence = bin_op.precedence();
 

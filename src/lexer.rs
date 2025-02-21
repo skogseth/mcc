@@ -190,11 +190,37 @@ pub enum Token {
     Semicolon,
 }
 
+impl std::fmt::Display for Token {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Identifier(name) => write!(f, "identifier `{name}`"),
+            Self::Constant(i) => write!(f, "constant with value `{i}`"),
+            Self::Keyword(keyword) => write!(f, "keyword `{keyword}`"),
+            Self::Operator(op) => write!(f, "{op:?}"),
+            Self::OpenParenthesis => f.write_str("`(`"),
+            Self::CloseParenthesis => f.write_str("`)`"),
+            Self::OpenBrace => f.write_str("`{`"),
+            Self::CloseBrace => f.write_str("`}`"),
+            Self::Semicolon => f.write_str("`;`"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Keyword {
     Int,
     Void,
     Return,
+}
+
+impl std::fmt::Display for Keyword {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Int => f.write_str("int"),
+            Self::Void => f.write_str("void"),
+            Self::Return => f.write_str("return"),
+        }
+    }
 }
 
 impl FromStr for Keyword {
