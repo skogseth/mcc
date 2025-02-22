@@ -7,12 +7,15 @@ pub fn run(lines: &[&str]) -> Result<Vec<TokenElem>, LexerError> {
         .iter()
         .copied()
         .enumerate()
-        .flat_map(|(i, line)| {
-            line.chars().enumerate().map(move |(j, char)| CharElem {
-                char,
-                line: i,
-                position: j,
-            })
+        .flat_map(|(line_num, line)| {
+            line.chars()
+                .chain(std::iter::once('\n'))
+                .enumerate()
+                .map(move |(char_pos, char)| CharElem {
+                    char,
+                    line: line_num,
+                    position: char_pos,
+                })
         })
         .peekable();
 
