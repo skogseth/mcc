@@ -188,7 +188,10 @@ impl BlockItem {
     }
 
     fn emit_tacky(self, instructions: &mut Vec<crate::tacky::Instruction>) {
-        todo!()
+        match self {
+            Self::S(statement) => statement.emit_tacky(instructions),
+            Self::D(decleration) => decleration.emit_tacky(instructions),
+        }
     }
 }
 
