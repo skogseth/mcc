@@ -81,7 +81,7 @@ impl std::fmt::Display for Instruction {
             Self::Cmp(op_1, op_2) => writeln!(f, "\tcmpl\t{op_1}, {op_2}"),
             Self::Idiv(dst) => writeln!(f, "\tidivl\t{dst}"),
             Self::Cdq => writeln!(f, "\tcdq"),
-            Self::Jmp(raw_label) => writeln!(f, "\tjmp\t{}", local_label(raw_label)) ,
+            Self::Jmp(raw_label) => writeln!(f, "\tjmp\t{}", local_label(raw_label)),
             Self::JmpCC(cc, raw_label) => writeln!(f, "\tj{cc}\t{}", local_label(raw_label)),
             Self::SetCC(cc, op) => writeln!(f, "\tset{cc}\t{op}"),
             Self::Label(raw_label) => writeln!(f, "{}:", local_label(raw_label)),
@@ -227,7 +227,7 @@ pub fn replace_pseudo_registers(instructions: &mut [Instruction]) -> i64 {
             Instruction::Cdq
             | Instruction::Jmp(_)
             | Instruction::JmpCC(_, _)
-            | Instruction::Label(_) 
+            | Instruction::Label(_)
             | Instruction::Ret
             /* --- */ => {}
         }

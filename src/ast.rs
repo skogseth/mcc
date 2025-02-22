@@ -2,11 +2,11 @@ use std::sync::atomic::Ordering;
 use std::vec::IntoIter;
 use std::{iter::Peekable, sync::atomic::AtomicUsize};
 
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use thiserror::Error;
 
-use crate::lexer::{Keyword, Operator, Token, TokenElem};
 use crate::Span;
+use crate::lexer::{Keyword, Operator, Token, TokenElem};
 
 pub fn parse(tokens: Vec<TokenElem>) -> Result<Program, ParseError> {
     let mut tokens = tokens.into_iter().peekable();
@@ -232,7 +232,12 @@ impl Declaration {
             }
             Token::Semicolon => Ok(Self { name, init: None }),
 
-            token => Err(ParseError::WrongToken { message: String::from("expected identifier in declaration to be followed by either assignment or semicolon"), span: token_elem.span }),
+            token => Err(ParseError::WrongToken {
+                message: String::from(
+                    "expected identifier in declaration to be followed by either assignment or semicolon",
+                ),
+                span: token_elem.span,
+            }),
         }
     }
 

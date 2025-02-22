@@ -105,7 +105,7 @@ pub fn run(lines: &[&str]) -> Result<Vec<TokenElem>, LexerError> {
                         return Err(LexerError {
                             message: "bitwise and ('&') is not supported",
                             char_elem: c,
-                        })
+                        });
                     }
                 },
                 '|' => match iter.next_if(|c| c.char == '|') {
@@ -114,7 +114,7 @@ pub fn run(lines: &[&str]) -> Result<Vec<TokenElem>, LexerError> {
                         return Err(LexerError {
                             message: "bitwise or ('|') is not supported",
                             char_elem: c,
-                        })
+                        });
                     }
                 },
 
@@ -136,7 +136,7 @@ pub fn run(lines: &[&str]) -> Result<Vec<TokenElem>, LexerError> {
                     return Err(LexerError {
                         message: "not a valid token",
                         char_elem: c,
-                    })
+                    });
                 }
             };
 
