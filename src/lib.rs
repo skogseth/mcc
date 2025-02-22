@@ -27,11 +27,22 @@ pub struct Options {
     pub codegen: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Span {
     pub line: usize,
     pub start_position: usize,
     pub end_position: usize,
+}
+
+impl Span {
+    #[cfg(test)]
+    fn dummy() -> Self {
+        Self {
+            line: 0,
+            start_position: 0,
+            end_position: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

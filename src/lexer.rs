@@ -163,7 +163,7 @@ pub struct CharElem {
     pub position: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TokenElem {
     pub token: Token,
     pub span: Span,

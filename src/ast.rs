@@ -258,7 +258,7 @@ fn remove_semicolon(tokens: &mut TokenIter) -> Result<(), ParseError> {
 
 impl Statement {
     fn parse(tokens: &mut TokenIter) -> Result<Self, ParseError> {
-        let peeked = tokens.peek().ok_or(ParseError::EarlyEnd(""))?;
+        let peeked = tokens.peek().ok_or(ParseError::EarlyEnd("statement"))?;
         match peeked.token {
             Token::Keyword(Keyword::Return) => {
                 let _ = tokens.next().expect("token must be return keyword");
@@ -309,12 +309,7 @@ impl Expression {
     fn parse_expr(tokens: &mut TokenIter, min_prec: u32) -> Result<Self, ParseError> {
         let mut left = Self::parse_factor(tokens)?;
 
-        loop {
-            let elem = tokens.peek().ok_or(ParseError::EarlyEnd(""))?;
-            let Some(bin_op) = BinaryOperator::parse(&elem.token) else {
-                break;
-            };
-
+        while let Some(bin_op) = tokens.peek().and_then(|e| BinaryOperator::parse(&e.token)) {
             let precedence = bin_op.precedence();
 
             // Check precedence of operator
@@ -367,7 +362,9 @@ impl Expression {
             Token::OpenParenthesis => {
                 let expr = Self::parse_expr(tokens, 0)?;
 
-                let next_token = tokens.next().ok_or(ParseError::EarlyEnd(""))?;
+                let next_token = tokens
+                    .next()
+                    .ok_or(ParseError::EarlyEnd("close parenthesis"))?;
                 match next_token.token {
                     Token::CloseParenthesis => Ok(expr),
                     t => Err(ParseError::WrongToken {
@@ -576,11 +573,18 @@ mod tests {
 
     #[test]
     fn binary_operators() {
-        let tokens = vec![
+        let just_tokens = vec![
             Token::Constant(3),
             Token::Operator(Operator::Minus),
             Token::Constant(2),
         ];
+        let tokens: Vec<_> = just_tokens
+            .into_iter()
+            .map(|token| TokenElem {
+                token,
+                span: Span::dummy(),
+            })
+            .collect();
         let mut tokens = tokens.into_iter().peekable();
 
         let parsed = Expression::parse(&mut tokens).unwrap();
@@ -597,13 +601,20 @@ mod tests {
 
     #[test]
     fn operator_precedence() {
-        let tokens = vec![
+        let just_tokens = vec![
             Token::Constant(1),
             Token::Operator(Operator::Plus),
             Token::Constant(2),
             Token::Operator(Operator::Asterisk),
             Token::Constant(3),
         ];
+        let tokens: Vec<_> = just_tokens
+            .into_iter()
+            .map(|token| TokenElem {
+                token,
+                span: Span::dummy(),
+            })
+            .collect();
         let mut tokens = tokens.into_iter().peekable();
 
         let parsed = Expression::parse(&mut tokens).unwrap();
@@ -624,13 +635,20 @@ mod tests {
 
     #[test]
     fn left_ordering() {
-        let tokens = vec![
+        let just_tokens = vec![
             Token::Constant(4),
             Token::Operator(Operator::Asterisk),
             Token::Constant(3),
             Token::Operator(Operator::Slash),
             Token::Constant(2),
         ];
+        let tokens: Vec<_> = just_tokens
+            .into_iter()
+            .map(|token| TokenElem {
+                token,
+                span: Span::dummy(),
+            })
+            .collect();
         let mut tokens = tokens.into_iter().peekable();
 
         let parsed = Expression::parse(&mut tokens).unwrap();
@@ -651,12 +669,19 @@ mod tests {
 
     #[test]
     fn unary_and_binary_operator() {
-        let tokens = vec![
+        let just_tokens = vec![
             Token::Operator(Operator::Minus),
             Token::Constant(4),
             Token::Operator(Operator::Asterisk),
             Token::Constant(3),
         ];
+        let tokens: Vec<_> = just_tokens
+            .into_iter()
+            .map(|token| TokenElem {
+                token,
+                span: Span::dummy(),
+            })
+            .collect();
         let mut tokens = tokens.into_iter().peekable();
 
         let parsed = Expression::parse(&mut tokens).unwrap();
@@ -677,9 +702,14 @@ mod tests {
     #[test]
     fn operator_precedence_with_parsing() {
         let expr = "10 + (8 - 4) * 3";
-        let tokens = crate::lexer::run(expr).unwrap();
+        let tokens = crate::lexer::run(&[expr]).unwrap();
+
+        let just_tokens = tokens
+            .iter()
+            .map(|elem| elem.token.clone())
+            .collect::<Vec<_>>();
         assert_eq!(
-            tokens,
+            just_tokens,
             [
                 Token::Constant(10),
                 Token::Operator(Operator::Plus),
@@ -718,9 +748,14 @@ mod tests {
     #[test]
     fn operator_precedence_with_parsing_and_negation() {
         let expr = "10 + (8 - 4) * (-3)";
-        let tokens = crate::lexer::run(expr).unwrap();
+        let tokens = crate::lexer::run(&[expr]).unwrap();
+
+        let just_tokens = tokens
+            .iter()
+            .map(|elem| elem.token.clone())
+            .collect::<Vec<_>>();
         assert_eq!(
-            tokens,
+            just_tokens,
             [
                 Token::Constant(10),
                 Token::Operator(Operator::Plus),
@@ -738,7 +773,6 @@ mod tests {
         );
 
         let mut tokens = tokens.into_iter().peekable();
-
         let parsed = Expression::parse(&mut tokens).unwrap();
 
         assert_eq!(
