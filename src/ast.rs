@@ -5,7 +5,8 @@ use std::{iter::Peekable, sync::atomic::AtomicUsize};
 use anyhow::{anyhow, Context};
 use thiserror::Error;
 
-use crate::lexer::{Keyword, Operator, Span, Token, TokenElem};
+use crate::lexer::{Keyword, Operator, Token, TokenElem};
+use crate::Span;
 
 pub fn parse(tokens: Vec<TokenElem>) -> Result<Program, ParseError> {
     let mut tokens = tokens.into_iter().peekable();

@@ -2,7 +2,6 @@ use std::path::Path;
 
 use anyhow::Context;
 use clap::Args;
-use lexer::Span;
 use thiserror::Error;
 
 mod assembly;
@@ -11,7 +10,6 @@ mod lexer;
 mod tacky;
 
 use self::ast::ParseError;
-use self::lexer::{CharElem, LexerError, TokenElem};
 
 #[derive(Debug, Clone, Args)]
 #[group(required = false, multiple = false)]
@@ -27,6 +25,13 @@ pub struct Options {
 
     #[arg(long)]
     pub codegen: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Span {
+    pub line: usize,
+    pub start_position: usize,
+    pub end_position: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -55,67 +60,42 @@ impl LineView {
 
 #[derive(Debug, Error)]
 pub enum CompilerError {
-    Lexer(LexerError, LineView),
-    WrongToken {
-        message: String,
-        span: Span,
-        view: LineView,
-    },
+    #[error(transparent)]
+    Lexer(SpanError),
+    #[error(transparent)]
+    WrongToken(SpanError),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
 
-impl std::fmt::Display for CompilerError {
+#[derive(Debug, Error)]
+pub struct SpanError {
+    message: String,
+    span: Span,
+    view: LineView,
+}
+
+impl std::fmt::Display for SpanError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Lexer(error, view) => {
-                for (line_number, line) in &view.before {
-                    writeln!(f, "{} {}", console::style(line_number).blue(), line)?;
-                }
-
-                writeln!(
-                    f,
-                    "| {fill}{marker} {message}",
-                    fill = " ".repeat(error.char_elem.position),
-                    marker = console::style("^").red(),
-                    message = console::style(error.message).red(),
-                )?;
-
-                for (line_number, line) in &view.after {
-                    writeln!(f, "{} {}", console::style(line_number).blue(), line)?;
-                }
-
-                Ok(())
-            }
-            Self::WrongToken {
-                message,
-                span,
-                view,
-            } => {
-                for (line_number, line) in &view.before {
-                    writeln!(f, "{} {}", console::style(line_number).blue(), line)?;
-                }
-
-                writeln!(
-                    f,
-                    "| {fill}{marker} {message}",
-                    fill = " ".repeat(span.start_position),
-                    marker =
-                        console::style("^".repeat(span.end_position - span.start_position + 1))
-                            .red(),
-                    message = console::style(message).red(),
-                )?;
-
-                for (line_number, line) in &view.after {
-                    writeln!(f, "{} {}", console::style(line_number).blue(), line)?;
-                }
-
-                Ok(())
-            }
-            Self::Other(e) => {
-                writeln!(f, "{}", console::style(e).red())
-            }
+        for (line_number, line) in &self.view.before {
+            writeln!(f, "{} {}", console::style(line_number).blue(), line)?;
         }
+
+        writeln!(
+            f,
+            "| {fill}{marker} {message}",
+            fill = " ".repeat(self.span.start_position),
+            marker =
+                console::style("^".repeat(self.span.end_position - self.span.start_position + 1))
+                    .red(),
+            message = console::style(&self.message).red(),
+        )?;
+
+        for (line_number, line) in &self.view.after {
+            writeln!(f, "{} {}", console::style(line_number).blue(), line)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -124,8 +104,15 @@ pub fn compiler(input: &Path, output: &Path, options: Options) -> Result<bool, C
     let lines: Vec<&str> = content.lines().collect();
 
     let tokens = lexer::run(&lines[..]).map_err(|source| {
-        let view = LineView::from_line(source.char_elem.line, &lines[..]);
-        CompilerError::Lexer(source, view)
+        CompilerError::Lexer(SpanError {
+            message: source.message.to_owned(),
+            span: Span {
+                line: source.char_elem.line,
+                start_position: source.char_elem.position,
+                end_position: source.char_elem.position,
+            },
+            view: LineView::from_line(source.char_elem.line, &lines[..]),
+        })
     })?;
     if options.lex {
         println!("{tokens:?}");
@@ -135,11 +122,11 @@ pub fn compiler(input: &Path, output: &Path, options: Options) -> Result<bool, C
     let program = ast::parse(tokens).map_err(|source| match source {
         ParseError::WrongToken { message, span } => {
             let view = LineView::from_line(span.line, &lines[..]);
-            CompilerError::WrongToken {
+            CompilerError::WrongToken(SpanError {
                 message,
                 span,
                 view,
-            }
+            })
         }
         ParseError::Other(e) => CompilerError::Other(e),
         ParseError::EarlyEnd(e) => {

@@ -1,5 +1,7 @@
 use std::str::FromStr;
 
+use crate::Span;
+
 pub fn run(lines: &[&str]) -> Result<Vec<TokenElem>, LexerError> {
     let mut iter = lines
         .iter()
@@ -162,13 +164,6 @@ pub struct CharElem {
 pub struct TokenElem {
     pub token: Token,
     pub span: Span,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct Span {
-    pub line: usize,
-    pub start_position: usize,
-    pub end_position: usize,
 }
 
 #[derive(Debug, Clone)]
