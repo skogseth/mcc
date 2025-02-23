@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::ast::Identifier;
+use crate::Identifier;
 
 #[derive(Debug, Clone)]
 pub struct Program(pub Function);

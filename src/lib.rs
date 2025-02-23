@@ -1,7 +1,9 @@
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::Context;
 use clap::Args;
+use lexer::CharElem;
 use thiserror::Error;
 
 mod assembly;
@@ -27,6 +29,35 @@ pub struct Options {
     pub codegen: bool,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Identifier(pub String);
+
+impl Identifier {
+    pub fn new(s: impl Into<String>) -> Self {
+        Self(s.into())
+    }
+
+    pub fn new_temp() -> Self {
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let value = COUNTER.fetch_add(1, Ordering::Relaxed);
+        assert_ne!(value, usize::MAX, "max number of temp values exceeded");
+        Self(format!("tmp.{value}"))
+    }
+
+    pub fn new_label(prefix: &str) -> Self {
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let value = COUNTER.fetch_add(1, Ordering::Relaxed);
+        assert_ne!(value, usize::MAX, "max number of temp values exceeded");
+        Self(format!("{prefix}.{value}"))
+    }
+}
+
+impl std::fmt::Display for Identifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Span {
     pub line: usize,
@@ -35,6 +66,23 @@ pub struct Span {
 }
 
 impl Span {
+    fn single(c: CharElem) -> Self {
+        Self {
+            line: c.line,
+            start_position: c.position,
+            end_position: c.position,
+        }
+    }
+
+    fn wide(start: CharElem, end: CharElem) -> Self {
+        assert_eq!(start.line, end.line);
+        Self {
+            line: start.line,
+            start_position: start.position,
+            end_position: end.position,
+        }
+    }
+
     #[cfg(test)]
     fn dummy() -> Self {
         Self {
@@ -72,9 +120,7 @@ impl LineView {
 #[derive(Debug, Error)]
 pub enum CompilerError {
     #[error(transparent)]
-    Lexer(SpanError),
-    #[error(transparent)]
-    WrongToken(SpanError),
+    Span(SpanError),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
@@ -115,7 +161,7 @@ pub fn compiler(input: &Path, output: &Path, options: Options) -> Result<bool, C
     let lines: Vec<&str> = content.lines().collect();
 
     let tokens = lexer::run(&lines[..]).map_err(|source| {
-        CompilerError::Lexer(SpanError {
+        CompilerError::Span(SpanError {
             message: source.message.to_owned(),
             span: Span {
                 line: source.char_elem.line,
@@ -133,13 +179,12 @@ pub fn compiler(input: &Path, output: &Path, options: Options) -> Result<bool, C
     let program = ast::parse(tokens).map_err(|source| match source {
         ParseError::WrongToken { message, span } => {
             let view = LineView::from_line(span.line, &lines[..]);
-            CompilerError::WrongToken(SpanError {
+            CompilerError::Span(SpanError {
                 message,
                 span,
                 view,
             })
         }
-        ParseError::Other(e) => CompilerError::Other(e),
         ParseError::EarlyEnd(e) => {
             CompilerError::Other(anyhow::anyhow!("unexpected early end: {e}"))
         }

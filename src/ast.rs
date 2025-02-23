@@ -1,12 +1,8 @@
-use std::sync::atomic::Ordering;
+use std::iter::Peekable;
 use std::vec::IntoIter;
-use std::{iter::Peekable, sync::atomic::AtomicUsize};
 
-use anyhow::{Context, anyhow};
-use thiserror::Error;
-
-use crate::Span;
 use crate::lexer::{Keyword, Operator, Token, TokenElem};
+use crate::{Identifier, Span};
 
 pub fn parse(tokens: Vec<TokenElem>) -> Result<Program, ParseError> {
     let mut tokens = tokens.into_iter().peekable();
@@ -24,42 +20,10 @@ pub fn parse(tokens: Vec<TokenElem>) -> Result<Program, ParseError> {
 
 pub type TokenIter<'a> = Peekable<IntoIter<TokenElem>>;
 
-#[derive(Debug, Error)]
+#[derive(Debug)]
 pub enum ParseError {
     WrongToken { message: String, span: Span },
-    Other(anyhow::Error),
     EarlyEnd(&'static str),
-}
-
-impl std::fmt::Display for ParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{self:#?}")
-    }
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Identifier(pub String);
-
-impl Identifier {
-    pub fn new_temp() -> Self {
-        static COUNTER: AtomicUsize = AtomicUsize::new(0);
-        let value = COUNTER.fetch_add(1, Ordering::Relaxed);
-        assert_ne!(value, usize::MAX, "max number of temp values exceeded");
-        Self(format!("tmp.{value}"))
-    }
-
-    pub fn new_label(prefix: &str) -> Self {
-        static COUNTER: AtomicUsize = AtomicUsize::new(0);
-        let value = COUNTER.fetch_add(1, Ordering::Relaxed);
-        assert_ne!(value, usize::MAX, "max number of temp values exceeded");
-        Self(format!("{prefix}.{value}"))
-    }
-}
-
-impl std::fmt::Display for Identifier {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -80,35 +44,26 @@ pub struct Function {
 impl Function {
     fn parse(tokens: &mut TokenIter) -> Result<Self, ParseError> {
         let TokenElem { token, span } = tokens.next().ok_or(ParseError::EarlyEnd("return type"))?;
-        match token {
-            Token::Keyword(Keyword::Int) => {}
-            _ => {
-                let message = format!("expected return type, found {token:?}");
-                return Err(ParseError::WrongToken { message, span });
-            }
-        }
+        let Token::Keyword(Keyword::Int) = token else {
+            let message = format!("expected return type, found {token}");
+            return Err(ParseError::WrongToken { message, span });
+        };
 
         let TokenElem { token, span } = tokens
             .next()
             .ok_or(ParseError::EarlyEnd("function identifier"))?;
-        let name = match token {
-            Token::Identifier(s) => Identifier(s),
-            _ => {
-                let message = format!("failed to find function identifier, found {token:?}");
-                return Err(ParseError::WrongToken { message, span });
-            }
+        let Token::Identifier(name) = token else {
+            let message = format!("expected function identifier, found {token}");
+            return Err(ParseError::WrongToken { message, span });
         };
 
         let TokenElem { token, span } = tokens
             .next()
             .ok_or(ParseError::EarlyEnd("open-parenthesis"))?;
-        match token {
-            Token::OpenParenthesis => {}
-            _ => {
-                let message = format!("no open-parenthesis found for function {name}");
-                return Err(ParseError::WrongToken { message, span });
-            }
-        }
+        let Token::OpenParenthesis = token else {
+            let message = format!("expected open-parenthesis for function {name}, found {token}");
+            return Err(ParseError::WrongToken { message, span });
+        };
 
         assert!(matches!(
             tokens.next(),
@@ -121,22 +76,16 @@ impl Function {
         let TokenElem { token, span } = tokens
             .next()
             .ok_or(ParseError::EarlyEnd("close-parenthesis"))?;
-        match token {
-            Token::CloseParenthesis => {}
-            _ => {
-                let message = format!("no close-parenthesis found for function {name}");
-                return Err(ParseError::WrongToken { message, span });
-            }
-        }
+        let Token::CloseParenthesis = token else {
+            let message = format!("expected close-parenthesis for function {name}, found {token}");
+            return Err(ParseError::WrongToken { message, span });
+        };
 
         let TokenElem { token, span } = tokens.next().ok_or(ParseError::EarlyEnd("open brace"))?;
-        match token {
-            Token::OpenBrace => {}
-            _ => {
-                let message = format!("no open brace found for function {name}");
-                return Err(ParseError::WrongToken { message, span });
-            }
-        }
+        let Token::OpenBrace = token else {
+            let message = format!("expected open brace for function {name}, found {token}");
+            return Err(ParseError::WrongToken { message, span });
+        };
 
         let mut body = Vec::new();
         loop {
@@ -147,14 +96,8 @@ impl Function {
             }
         }
 
-        let TokenElem { token, span } = tokens.next().ok_or(ParseError::EarlyEnd("open brace"))?;
-        match token {
-            Token::CloseBrace => {}
-            _ => {
-                let message = format!("no close brace found for function {name}");
-                return Err(ParseError::WrongToken { message, span });
-            }
-        }
+        let TokenElem { token, .. } = tokens.next().expect("close brace");
+        assert!(matches!(token, Token::CloseBrace));
 
         Ok(Function { name, body })
     }
@@ -208,14 +151,11 @@ impl Declaration {
         let token_elem = tokens
             .next()
             .ok_or(ParseError::EarlyEnd("identifier in declaration"))?;
-        let name = match token_elem.token {
-            Token::Identifier(identifier) => Identifier(identifier),
-            _ => {
-                return Err(ParseError::WrongToken {
-                    message: format!("expected type to be followed by identifier in declaration"),
-                    span: token_elem.span,
-                });
-            }
+        let Token::Identifier(name) = token_elem.token else {
+            return Err(ParseError::WrongToken {
+                message: format!("expected type to be followed by identifier in declaration"),
+                span: token_elem.span,
+            });
         };
 
         let token_elem = tokens
@@ -232,7 +172,7 @@ impl Declaration {
             }
             Token::Semicolon => Ok(Self { name, init: None }),
 
-            token => Err(ParseError::WrongToken {
+            _ => Err(ParseError::WrongToken {
                 message: String::from(
                     "expected identifier in declaration to be followed by either assignment or semicolon",
                 ),
@@ -351,7 +291,7 @@ impl Expression {
         match token_elem.token {
             Token::Constant(i) => Ok(Expression::Constant(i)),
 
-            Token::Identifier(identifier) => Ok(Expression::Var(Identifier(identifier))),
+            Token::Identifier(identifier) => Ok(Expression::Var(identifier)),
 
             // --- Parse unary operators ---
             Token::Operator(Operator::Minus) => Ok(Self::Unary(
@@ -376,14 +316,14 @@ impl Expression {
                 match next_token.token {
                     Token::CloseParenthesis => Ok(expr),
                     t => Err(ParseError::WrongToken {
-                        message: format!("expected close parenthesis, found {t:?}"),
+                        message: format!("expected close parenthesis, found {t}"),
                         span: next_token.span,
                     }),
                 }
             }
 
             t => Err(ParseError::WrongToken {
-                message: format!("unknown token found for expression: {t:?}"),
+                message: format!("unknown token found for expression: {t}"),
                 span: token_elem.span,
             }),
         }

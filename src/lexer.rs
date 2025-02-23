@@ -1,6 +1,6 @@
-use std::str::FromStr;
+use std::{iter::Peekable, str::FromStr};
 
-use crate::Span;
+use crate::{Identifier, Span};
 
 pub fn run(lines: &[&str]) -> Result<Vec<TokenElem>, LexerError> {
     let mut iter = lines
@@ -20,140 +20,141 @@ pub fn run(lines: &[&str]) -> Result<Vec<TokenElem>, LexerError> {
         .peekable();
 
     let mut tokens: Vec<TokenElem> = Vec::new();
-    while let Some(c) = iter.next() {
-        if c.char.is_whitespace() {
-            continue;
-        }
-
-        // If we encounter any "normal characters" then we have found an identifier
-        let token_elem = if c.char.is_alphabetic() || c.char == '_' {
-            let mut extracted = String::from(c.char);
-            let mut span = Span {
-                line: c.line,
-                start_position: c.position,
-                end_position: c.position,
-            };
-
-            // Important that we allow numbers here, but not in the initial position ^
-            while let Some(c) = iter.next_if(|c| c.char.is_alphanumeric() || c.char == '_') {
-                extracted.push(c.char);
-                span.end_position = c.position;
-            }
-
-            let token = match extracted.parse::<Keyword>() {
-                Ok(keyword) => Token::Keyword(keyword),
-                Err(()) => Token::Identifier(extracted),
-            };
-
-            TokenElem { token, span }
-        } else if c.char.is_numeric() {
-            let mut extracted = String::from(c.char);
-            let mut span = Span {
-                line: c.line,
-                start_position: c.position,
-                end_position: c.position,
-            };
-
-            while let Some(c) = iter.next_if(|c| c.char.is_alphanumeric()) {
-                if c.char.is_numeric() {
-                    extracted.push(c.char);
-                    span.end_position = c.position;
-                } else {
-                    return Err(LexerError {
-                        message: "encountered alphabetic character as part of a number",
-                        char_elem: c,
-                    });
-                }
-            }
-
-            let token = Token::Constant(extracted.parse().unwrap());
-            TokenElem { token, span }
-        } else {
-            let token = match c.char {
-                '(' => Token::OpenParenthesis,
-                ')' => Token::CloseParenthesis,
-                '{' => Token::OpenBrace,
-                '}' => Token::CloseBrace,
-                ';' => Token::Semicolon,
-
-                // This can be either plus ('+') or increment ('++')
-                '+' => match iter.next_if(|c| c.char == '+') {
-                    Some(_) => Token::Operator(Operator::Increment),
-                    None => Token::Operator(Operator::Plus),
-                },
-
-                // This can be either minus ('-') or decrement ('--')
-                '-' => match iter.next_if(|c| c.char == '-') {
-                    Some(_) => Token::Operator(Operator::Decrement),
-                    None => Token::Operator(Operator::Minus),
-                },
-
-                '*' => Token::Operator(Operator::Asterisk),
-                '/' => Token::Operator(Operator::Slash),
-                '%' => Token::Operator(Operator::Percent),
-                '~' => Token::Operator(Operator::Tilde),
-
-                // Could be either "not" ('!') or "not equal" ('!=')
-                '!' => match iter.next_if(|c| c.char == '=') {
-                    Some(_) => Token::Operator(Operator::NotEqual),
-                    None => Token::Operator(Operator::Not),
-                },
-
-                '&' => match iter.next_if(|c| c.char == '&') {
-                    Some(_) => Token::Operator(Operator::And),
-                    None => {
-                        return Err(LexerError {
-                            message: "bitwise and ('&') is not supported",
-                            char_elem: c,
-                        });
-                    }
-                },
-                '|' => match iter.next_if(|c| c.char == '|') {
-                    Some(_) => Token::Operator(Operator::Or),
-                    None => {
-                        return Err(LexerError {
-                            message: "bitwise or ('|') is not supported",
-                            char_elem: c,
-                        });
-                    }
-                },
-
-                '=' => match iter.next_if(|c| c.char == '=') {
-                    Some(_) => Token::Operator(Operator::Equal),
-                    None => Token::Operator(Operator::Assignment),
-                },
-
-                '<' => match iter.next_if(|c| c.char == '=') {
-                    Some(_) => Token::Operator(Operator::LessOrEqual),
-                    None => Token::Operator(Operator::LessThan),
-                },
-                '>' => match iter.next_if(|c| c.char == '=') {
-                    Some(_) => Token::Operator(Operator::GreaterOrEqual),
-                    None => Token::Operator(Operator::GreaterThan),
-                },
-
-                _ => {
-                    return Err(LexerError {
-                        message: "not a valid token",
-                        char_elem: c,
-                    });
-                }
-            };
-
-            TokenElem {
-                token,
-                span: Span {
-                    line: c.line,
-                    start_position: c.position,
-                    end_position: c.position,
-                },
-            }
-        };
-
+    while let Some(result) = next_token(&mut iter) {
+        let token_elem = result?;
         tokens.push(token_elem);
     }
 
     Ok(tokens)
+}
+
+fn next_token(
+    iter: &mut Peekable<impl Iterator<Item = CharElem>>,
+) -> Option<Result<TokenElem, LexerError>> {
+    let c = loop {
+        let c = iter.next()?;
+        if !c.char.is_whitespace() {
+            break c;
+        }
+    };
+
+    // If we encounter any "normal characters" then we have found an identifier
+    if c.char.is_alphabetic() || c.char == '_' {
+        let mut extracted = String::from(c.char);
+        let mut span = Span {
+            line: c.line,
+            start_position: c.position,
+            end_position: c.position,
+        };
+
+        // Important that we allow numbers here, but not in the initial position ^
+        while let Some(c) = iter.next_if(|c| c.char.is_alphanumeric() || c.char == '_') {
+            extracted.push(c.char);
+            span.end_position = c.position;
+        }
+
+        let token = match extracted.parse::<Keyword>() {
+            Ok(keyword) => Token::Keyword(keyword),
+            Err(()) => Token::Identifier(Identifier(extracted)),
+        };
+
+        Some(Ok(TokenElem { token, span }))
+    } else if c.char.is_numeric() {
+        let mut extracted = String::from(c.char);
+        let mut span = Span {
+            line: c.line,
+            start_position: c.position,
+            end_position: c.position,
+        };
+
+        while let Some(c) = iter.next_if(|c| c.char.is_alphanumeric()) {
+            if c.char.is_numeric() {
+                extracted.push(c.char);
+                span.end_position = c.position;
+            } else {
+                return Some(Err(LexerError {
+                    message: "encountered alphabetic character as part of a number",
+                    char_elem: c,
+                }));
+            }
+        }
+
+        let token = Token::Constant(extracted.parse().unwrap());
+        Some(Ok(TokenElem { token, span }))
+    } else {
+        let token_elem: TokenElem = match c.char {
+            '(' => Token::OpenParenthesis.with_span(Span::single(c)),
+            ')' => Token::CloseParenthesis.with_span(Span::single(c)),
+            '{' => Token::OpenBrace.with_span(Span::single(c)),
+            '}' => Token::CloseBrace.with_span(Span::single(c)),
+            ';' => Token::Semicolon.with_span(Span::single(c)),
+
+            // This can be either plus ('+') or increment ('++')
+            '+' => match iter.next_if(|c| c.char == '+') {
+                Some(c2) => Token::Operator(Operator::Increment).with_span(Span::wide(c, c2)),
+                None => Token::Operator(Operator::Plus).with_span(Span::single(c)),
+            },
+
+            // This can be either minus ('-') or decrement ('--')
+            '-' => match iter.next_if(|c| c.char == '-') {
+                Some(c2) => Token::Operator(Operator::Decrement).with_span(Span::wide(c, c2)),
+                None => Token::Operator(Operator::Minus).with_span(Span::single(c)),
+            },
+
+            '*' => Token::Operator(Operator::Asterisk).with_span(Span::single(c)),
+            '/' => Token::Operator(Operator::Slash).with_span(Span::single(c)),
+            '%' => Token::Operator(Operator::Percent).with_span(Span::single(c)),
+            '~' => Token::Operator(Operator::Tilde).with_span(Span::single(c)),
+
+            // Could be either "not" ('!') or "not equal" ('!=')
+            '!' => match iter.next_if(|c| c.char == '=') {
+                Some(c2) => Token::Operator(Operator::NotEqual).with_span(Span::wide(c, c2)),
+                None => Token::Operator(Operator::Not).with_span(Span::single(c)),
+            },
+
+            '&' => match iter.next_if(|c| c.char == '&') {
+                Some(c2) => Token::Operator(Operator::And).with_span(Span::wide(c, c2)),
+                None => {
+                    return Some(Err(LexerError {
+                        message: "bitwise and ('&') is not supported",
+                        char_elem: c,
+                    }));
+                }
+            },
+            '|' => match iter.next_if(|c| c.char == '|') {
+                Some(c2) => Token::Operator(Operator::Or).with_span(Span::wide(c, c2)),
+                None => {
+                    return Some(Err(LexerError {
+                        message: "bitwise or ('|') is not supported",
+                        char_elem: c,
+                    }));
+                }
+            },
+
+            '=' => match iter.next_if(|c| c.char == '=') {
+                Some(c2) => Token::Operator(Operator::Equal).with_span(Span::wide(c, c2)),
+                None => Token::Operator(Operator::Assignment).with_span(Span::single(c)),
+            },
+
+            '<' => match iter.next_if(|c| c.char == '=') {
+                Some(c2) => Token::Operator(Operator::LessOrEqual).with_span(Span::wide(c, c2)),
+                None => Token::Operator(Operator::LessThan).with_span(Span::single(c)),
+            },
+            '>' => match iter.next_if(|c| c.char == '=') {
+                Some(c2) => Token::Operator(Operator::GreaterOrEqual).with_span(Span::wide(c, c2)),
+                None => Token::Operator(Operator::GreaterThan).with_span(Span::single(c)),
+            },
+
+            _ => {
+                return Some(Err(LexerError {
+                    message: "not a valid token",
+                    char_elem: c,
+                }));
+            }
+        };
+
+        Some(Ok(token_elem))
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -177,7 +178,7 @@ pub struct LexerError {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {
-    Identifier(String),
+    Identifier(Identifier),
     Constant(i64), // TODO: Maybe a custom constant type?
     Keyword(Keyword),
     Operator(Operator),
@@ -186,6 +187,12 @@ pub enum Token {
     OpenBrace,
     CloseBrace,
     Semicolon,
+}
+
+impl Token {
+    fn with_span(self, span: Span) -> TokenElem {
+        TokenElem { token: self, span }
+    }
 }
 
 impl std::fmt::Display for Token {
@@ -271,7 +278,7 @@ mod tests {
 
         let expected = [
             Token::Keyword(Keyword::Return),
-            Token::Identifier(String::from("var_1")),
+            Token::Identifier(Identifier::new("var_1")),
             Token::Operator(Operator::Asterisk),
             Token::OpenParenthesis,
             Token::Operator(Operator::Minus),
@@ -284,7 +291,7 @@ mod tests {
 
     #[test]
     fn unicode() {
-        let identifier = String::from("_æôπ_üµ2_京แðİ");
+        let identifier = Identifier::new("_æôπ_üµ2_京แðİ");
         let raw = format!("return {identifier}");
         let tokens: Vec<_> = run(&[&raw]).unwrap().into_iter().map(|t| t.token).collect();
 
