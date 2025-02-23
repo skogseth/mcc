@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::Context;
 use clap::Args;
-use lexer::CharElem;
+use lexer::{CharElem, LexerError};
 use thiserror::Error;
 
 mod assembly;
@@ -160,17 +160,19 @@ pub fn compiler(input: &Path, output: &Path, options: Options) -> Result<bool, C
     let content = std::fs::read_to_string(input).context("failed to read input file")?;
     let lines: Vec<&str> = content.lines().collect();
 
-    let tokens = lexer::run(&lines[..]).map_err(|source| {
-        CompilerError::Span(SpanError {
-            message: source.message.to_owned(),
-            span: Span {
-                line: source.char_elem.line,
-                start_position: source.char_elem.position,
-                end_position: source.char_elem.position,
-            },
-            view: LineView::from_line(source.char_elem.line, &lines[..]),
-        })
-    })?;
+    let tokens: Vec<_> = lexer::make_lexer(&lines[..])
+        .collect::<Result<_, LexerError>>()
+        .map_err(|source| {
+            CompilerError::Span(SpanError {
+                message: source.message.to_owned(),
+                span: Span {
+                    line: source.char_elem.line,
+                    start_position: source.char_elem.position,
+                    end_position: source.char_elem.position,
+                },
+                view: LineView::from_line(source.char_elem.line, &lines[..]),
+            })
+        })?;
     if options.lex {
         println!("{tokens:?}");
         return Ok(false);

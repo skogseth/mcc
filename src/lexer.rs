@@ -2,8 +2,11 @@ use std::{iter::Peekable, str::FromStr};
 
 use crate::{Identifier, Span};
 
-pub fn run(lines: &[&str]) -> Result<Vec<TokenElem>, LexerError> {
-    let mut iter = lines
+#[derive(Debug)]
+pub struct Lexer<I: Iterator<Item = CharElem>>(Peekable<I>);
+
+pub fn make_lexer(lines: &[&str]) -> Lexer<impl Iterator<Item = CharElem>> {
+    let iter = lines
         .iter()
         .copied()
         .enumerate()
@@ -19,141 +22,142 @@ pub fn run(lines: &[&str]) -> Result<Vec<TokenElem>, LexerError> {
         })
         .peekable();
 
-    let mut tokens: Vec<TokenElem> = Vec::new();
-    while let Some(result) = next_token(&mut iter) {
-        let token_elem = result?;
-        tokens.push(token_elem);
-    }
-
-    Ok(tokens)
+    Lexer(iter)
 }
 
-fn next_token(
-    iter: &mut Peekable<impl Iterator<Item = CharElem>>,
-) -> Option<Result<TokenElem, LexerError>> {
-    let c = loop {
-        let c = iter.next()?;
-        if !c.char.is_whitespace() {
-            break c;
-        }
-    };
+impl<I: Iterator<Item = CharElem>> Iterator for Lexer<I> {
+    type Item = Result<TokenElem, LexerError>;
 
-    // If we encounter any "normal characters" then we have found an identifier
-    if c.char.is_alphabetic() || c.char == '_' {
-        let mut extracted = String::from(c.char);
-        let mut span = Span {
-            line: c.line,
-            start_position: c.position,
-            end_position: c.position,
+    fn next(&mut self) -> Option<Self::Item> {
+        let c = loop {
+            let c = self.0.next()?;
+            if !c.char.is_whitespace() {
+                break c;
+            }
         };
 
-        // Important that we allow numbers here, but not in the initial position ^
-        while let Some(c) = iter.next_if(|c| c.char.is_alphanumeric() || c.char == '_') {
-            extracted.push(c.char);
-            span.end_position = c.position;
-        }
+        // If we encounter any "normal characters" then we have found an identifier
+        if c.char.is_alphabetic() || c.char == '_' {
+            let mut extracted = String::from(c.char);
+            let mut span = Span {
+                line: c.line,
+                start_position: c.position,
+                end_position: c.position,
+            };
 
-        let token = match extracted.parse::<Keyword>() {
-            Ok(keyword) => Token::Keyword(keyword),
-            Err(()) => Token::Identifier(Identifier(extracted)),
-        };
-
-        Some(Ok(TokenElem { token, span }))
-    } else if c.char.is_numeric() {
-        let mut extracted = String::from(c.char);
-        let mut span = Span {
-            line: c.line,
-            start_position: c.position,
-            end_position: c.position,
-        };
-
-        while let Some(c) = iter.next_if(|c| c.char.is_alphanumeric()) {
-            if c.char.is_numeric() {
+            // Important that we allow numbers here, but not in the initial position ^
+            while let Some(c) = self
+                .0
+                .next_if(|c| c.char.is_alphanumeric() || c.char == '_')
+            {
                 extracted.push(c.char);
                 span.end_position = c.position;
-            } else {
-                return Some(Err(LexerError {
-                    message: "encountered alphabetic character as part of a number",
-                    char_elem: c,
-                }));
             }
+
+            let token = match extracted.parse::<Keyword>() {
+                Ok(keyword) => Token::Keyword(keyword),
+                Err(()) => Token::Identifier(Identifier(extracted)),
+            };
+
+            Some(Ok(TokenElem { token, span }))
+        } else if c.char.is_numeric() {
+            let mut extracted = String::from(c.char);
+            let mut span = Span {
+                line: c.line,
+                start_position: c.position,
+                end_position: c.position,
+            };
+
+            while let Some(c) = self.0.next_if(|c| c.char.is_alphanumeric()) {
+                if c.char.is_numeric() {
+                    extracted.push(c.char);
+                    span.end_position = c.position;
+                } else {
+                    return Some(Err(LexerError {
+                        message: "encountered alphabetic character as part of a number",
+                        char_elem: c,
+                    }));
+                }
+            }
+
+            let token = Token::Constant(extracted.parse().unwrap());
+            Some(Ok(TokenElem { token, span }))
+        } else {
+            let token_elem: TokenElem = match c.char {
+                '(' => Token::OpenParenthesis.with_span(Span::single(c)),
+                ')' => Token::CloseParenthesis.with_span(Span::single(c)),
+                '{' => Token::OpenBrace.with_span(Span::single(c)),
+                '}' => Token::CloseBrace.with_span(Span::single(c)),
+                ';' => Token::Semicolon.with_span(Span::single(c)),
+
+                // This can be either plus ('+') or increment ('++')
+                '+' => match self.0.next_if(|c| c.char == '+') {
+                    Some(c2) => Token::Operator(Operator::Increment).with_span(Span::wide(c, c2)),
+                    None => Token::Operator(Operator::Plus).with_span(Span::single(c)),
+                },
+
+                // This can be either minus ('-') or decrement ('--')
+                '-' => match self.0.next_if(|c| c.char == '-') {
+                    Some(c2) => Token::Operator(Operator::Decrement).with_span(Span::wide(c, c2)),
+                    None => Token::Operator(Operator::Minus).with_span(Span::single(c)),
+                },
+
+                '*' => Token::Operator(Operator::Asterisk).with_span(Span::single(c)),
+                '/' => Token::Operator(Operator::Slash).with_span(Span::single(c)),
+                '%' => Token::Operator(Operator::Percent).with_span(Span::single(c)),
+                '~' => Token::Operator(Operator::Tilde).with_span(Span::single(c)),
+
+                // Could be either "not" ('!') or "not equal" ('!=')
+                '!' => match self.0.next_if(|c| c.char == '=') {
+                    Some(c2) => Token::Operator(Operator::NotEqual).with_span(Span::wide(c, c2)),
+                    None => Token::Operator(Operator::Not).with_span(Span::single(c)),
+                },
+
+                '&' => match self.0.next_if(|c| c.char == '&') {
+                    Some(c2) => Token::Operator(Operator::And).with_span(Span::wide(c, c2)),
+                    None => {
+                        return Some(Err(LexerError {
+                            message: "bitwise and ('&') is not supported",
+                            char_elem: c,
+                        }));
+                    }
+                },
+                '|' => match self.0.next_if(|c| c.char == '|') {
+                    Some(c2) => Token::Operator(Operator::Or).with_span(Span::wide(c, c2)),
+                    None => {
+                        return Some(Err(LexerError {
+                            message: "bitwise or ('|') is not supported",
+                            char_elem: c,
+                        }));
+                    }
+                },
+
+                '=' => match self.0.next_if(|c| c.char == '=') {
+                    Some(c2) => Token::Operator(Operator::Equal).with_span(Span::wide(c, c2)),
+                    None => Token::Operator(Operator::Assignment).with_span(Span::single(c)),
+                },
+
+                '<' => match self.0.next_if(|c| c.char == '=') {
+                    Some(c2) => Token::Operator(Operator::LessOrEqual).with_span(Span::wide(c, c2)),
+                    None => Token::Operator(Operator::LessThan).with_span(Span::single(c)),
+                },
+                '>' => match self.0.next_if(|c| c.char == '=') {
+                    Some(c2) => {
+                        Token::Operator(Operator::GreaterOrEqual).with_span(Span::wide(c, c2))
+                    }
+                    None => Token::Operator(Operator::GreaterThan).with_span(Span::single(c)),
+                },
+
+                _ => {
+                    return Some(Err(LexerError {
+                        message: "not a valid token",
+                        char_elem: c,
+                    }));
+                }
+            };
+
+            Some(Ok(token_elem))
         }
-
-        let token = Token::Constant(extracted.parse().unwrap());
-        Some(Ok(TokenElem { token, span }))
-    } else {
-        let token_elem: TokenElem = match c.char {
-            '(' => Token::OpenParenthesis.with_span(Span::single(c)),
-            ')' => Token::CloseParenthesis.with_span(Span::single(c)),
-            '{' => Token::OpenBrace.with_span(Span::single(c)),
-            '}' => Token::CloseBrace.with_span(Span::single(c)),
-            ';' => Token::Semicolon.with_span(Span::single(c)),
-
-            // This can be either plus ('+') or increment ('++')
-            '+' => match iter.next_if(|c| c.char == '+') {
-                Some(c2) => Token::Operator(Operator::Increment).with_span(Span::wide(c, c2)),
-                None => Token::Operator(Operator::Plus).with_span(Span::single(c)),
-            },
-
-            // This can be either minus ('-') or decrement ('--')
-            '-' => match iter.next_if(|c| c.char == '-') {
-                Some(c2) => Token::Operator(Operator::Decrement).with_span(Span::wide(c, c2)),
-                None => Token::Operator(Operator::Minus).with_span(Span::single(c)),
-            },
-
-            '*' => Token::Operator(Operator::Asterisk).with_span(Span::single(c)),
-            '/' => Token::Operator(Operator::Slash).with_span(Span::single(c)),
-            '%' => Token::Operator(Operator::Percent).with_span(Span::single(c)),
-            '~' => Token::Operator(Operator::Tilde).with_span(Span::single(c)),
-
-            // Could be either "not" ('!') or "not equal" ('!=')
-            '!' => match iter.next_if(|c| c.char == '=') {
-                Some(c2) => Token::Operator(Operator::NotEqual).with_span(Span::wide(c, c2)),
-                None => Token::Operator(Operator::Not).with_span(Span::single(c)),
-            },
-
-            '&' => match iter.next_if(|c| c.char == '&') {
-                Some(c2) => Token::Operator(Operator::And).with_span(Span::wide(c, c2)),
-                None => {
-                    return Some(Err(LexerError {
-                        message: "bitwise and ('&') is not supported",
-                        char_elem: c,
-                    }));
-                }
-            },
-            '|' => match iter.next_if(|c| c.char == '|') {
-                Some(c2) => Token::Operator(Operator::Or).with_span(Span::wide(c, c2)),
-                None => {
-                    return Some(Err(LexerError {
-                        message: "bitwise or ('|') is not supported",
-                        char_elem: c,
-                    }));
-                }
-            },
-
-            '=' => match iter.next_if(|c| c.char == '=') {
-                Some(c2) => Token::Operator(Operator::Equal).with_span(Span::wide(c, c2)),
-                None => Token::Operator(Operator::Assignment).with_span(Span::single(c)),
-            },
-
-            '<' => match iter.next_if(|c| c.char == '=') {
-                Some(c2) => Token::Operator(Operator::LessOrEqual).with_span(Span::wide(c, c2)),
-                None => Token::Operator(Operator::LessThan).with_span(Span::single(c)),
-            },
-            '>' => match iter.next_if(|c| c.char == '=') {
-                Some(c2) => Token::Operator(Operator::GreaterOrEqual).with_span(Span::wide(c, c2)),
-                None => Token::Operator(Operator::GreaterThan).with_span(Span::single(c)),
-            },
-
-            _ => {
-                return Some(Err(LexerError {
-                    message: "not a valid token",
-                    char_elem: c,
-                }));
-            }
-        };
-
-        Some(Ok(token_elem))
     }
 }
 
@@ -274,7 +278,7 @@ mod tests {
     #[test]
     fn statement() {
         let raw = "return var_1 * (-490)";
-        let tokens: Vec<_> = run(&[raw]).unwrap().into_iter().map(|t| t.token).collect();
+        let tokens: Vec<_> = make_lexer(&[raw]).map(|t| t.unwrap().token).collect();
 
         let expected = [
             Token::Keyword(Keyword::Return),
@@ -293,7 +297,7 @@ mod tests {
     fn unicode() {
         let identifier = Identifier::new("_æôπ_üµ2_京แðİ");
         let raw = format!("return {identifier}");
-        let tokens: Vec<_> = run(&[&raw]).unwrap().into_iter().map(|t| t.token).collect();
+        let tokens: Vec<_> = make_lexer(&[&raw]).map(|t| t.unwrap().token).collect();
 
         let expected = [
             Token::Keyword(Keyword::Return),

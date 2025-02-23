@@ -650,7 +650,9 @@ mod tests {
     #[test]
     fn operator_precedence_with_parsing() {
         let expr = "10 + (8 - 4) * 3";
-        let tokens = crate::lexer::run(&[expr]).unwrap();
+        let tokens: Vec<_> = crate::lexer::make_lexer(&[expr])
+            .collect::<Result<_, _>>()
+            .unwrap();
 
         let just_tokens = tokens
             .iter()
@@ -696,7 +698,9 @@ mod tests {
     #[test]
     fn operator_precedence_with_parsing_and_negation() {
         let expr = "10 + (8 - 4) * (-3)";
-        let tokens = crate::lexer::run(&[expr]).unwrap();
+        let tokens: Vec<_> = crate::lexer::make_lexer(&[expr])
+            .collect::<Result<_, _>>()
+            .unwrap();
 
         let just_tokens = tokens
             .iter()
