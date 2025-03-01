@@ -93,30 +93,6 @@ impl Span {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct LineView<'lines> {
-    pub before: Vec<(usize, &'lines str)>,
-    pub after: Vec<(usize, &'lines str)>,
-}
-
-impl<'lines> LineView<'lines> {
-    fn from_line(line: usize, lines: &'lines [&'lines str]) -> LineView<'lines> {
-        let lower_line_number = usize::saturating_sub(line, 2);
-        let correct_line_number = usize::saturating_add(line, 1);
-        let upper_line_number = std::cmp::min(usize::saturating_add(line, 2), lines.len() - 1);
-
-        let before: Vec<(usize, &str)> = (lower_line_number..correct_line_number)
-            .map(|i| (i, lines[i]))
-            .collect();
-
-        let after: Vec<(usize, &str)> = (correct_line_number..=upper_line_number)
-            .map(|i| (i, lines[i]))
-            .collect();
-
-        LineView { before, after }
-    }
-}
-
 #[derive(Debug)]
 pub struct Output<'lines> {
     filepath: PathBuf,
@@ -125,11 +101,10 @@ pub struct Output<'lines> {
 
 impl Output<'_> {
     pub fn error(&self, span: Span, message: String) {
-        let view = LineView::from_line(span.line, self.lines);
         let span_error = SpanError {
-            view,
             message,
             span,
+            lines: &self.lines,
         };
         eprintln!(
             "{level}: {path}\n{error}",
@@ -144,12 +119,20 @@ impl Output<'_> {
 pub struct SpanError<'lines> {
     message: String,
     span: Span,
-    view: LineView<'lines>,
+    lines: &'lines [&'lines str],
 }
 
 impl std::fmt::Display for SpanError<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for (line_number, line) in &self.view.before {
+        let lower_line_number = usize::saturating_sub(self.span.line, 2);
+        let correct_line_number = usize::saturating_add(self.span.line, 1);
+        let upper_line_number = std::cmp::min(
+            usize::saturating_add(self.span.line, 2),
+            self.lines.len() - 1,
+        );
+
+        let before = (lower_line_number..correct_line_number).map(|i| (i, self.lines[i]));
+        for (line_number, line) in before {
             writeln!(f, "{} {}", console::style(line_number).blue(), line)?;
         }
 
@@ -163,7 +146,8 @@ impl std::fmt::Display for SpanError<'_> {
             message = console::style(&self.message).red(),
         )?;
 
-        for (line_number, line) in &self.view.after {
+        let after = (correct_line_number..=upper_line_number).map(|i| (i, self.lines[i]));
+        for (line_number, line) in after {
             writeln!(f, "{} {}", console::style(line_number).blue(), line)?;
         }
 
