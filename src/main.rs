@@ -39,7 +39,15 @@ fn main() -> Result<(), anyhow::Error> {
     preprocessor(&cli.filepath, &preprocessed_file)?;
 
     let assembly_file = tempdir.path().join(filename).with_extension("s");
-    match mcc::compiler(&preprocessed_file, &assembly_file, cli.options) {
+
+    let result = mcc::compiler(
+        &preprocessed_file,
+        &assembly_file,
+        cli.options,
+        cli.filepath.clone(),
+    );
+
+    match result {
         Ok(_keep_going @ false) => Ok(()),
         Ok(_keep_going @ true) => {
             let executable_file = basedir.join(filename).with_extension("");
@@ -47,11 +55,6 @@ fn main() -> Result<(), anyhow::Error> {
             Ok(())
         }
         Err(e) => {
-            eprintln!(
-                "{level}: {path}",
-                level = console::style("error").red(),
-                path = cli.filepath.display()
-            );
             eprintln!("{e}");
             std::process::exit(1);
         }

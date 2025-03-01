@@ -1,7 +1,7 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use anyhow::Context;
+use anyhow::{Context, anyhow};
 use clap::Args;
 use lexer::{CharElem, LexerError};
 use thiserror::Error;
@@ -94,45 +94,60 @@ impl Span {
 }
 
 #[derive(Debug, Clone)]
-pub struct LineView {
-    pub before: Vec<(usize, String)>,
-    pub after: Vec<(usize, String)>,
+pub struct LineView<'lines> {
+    pub before: Vec<(usize, &'lines str)>,
+    pub after: Vec<(usize, &'lines str)>,
 }
 
-impl LineView {
-    fn from_line(line: usize, lines: &[&str]) -> LineView {
+impl<'lines> LineView<'lines> {
+    fn from_line(line: usize, lines: &'lines [&'lines str]) -> LineView<'lines> {
         let lower_line_number = usize::saturating_sub(line, 2);
         let correct_line_number = usize::saturating_add(line, 1);
         let upper_line_number = std::cmp::min(usize::saturating_add(line, 2), lines.len() - 1);
 
-        let before: Vec<(usize, String)> = (lower_line_number..correct_line_number)
-            .map(|i| (i, lines[i].to_owned()))
+        let before: Vec<(usize, &str)> = (lower_line_number..correct_line_number)
+            .map(|i| (i, lines[i]))
             .collect();
 
-        let after: Vec<(usize, String)> = (correct_line_number..=upper_line_number)
-            .map(|i| (i, lines[i].to_owned()))
+        let after: Vec<(usize, &str)> = (correct_line_number..=upper_line_number)
+            .map(|i| (i, lines[i]))
             .collect();
 
         LineView { before, after }
     }
 }
 
-#[derive(Debug, Error)]
-pub enum CompilerError {
-    #[error(transparent)]
-    Span(SpanError),
-    #[error(transparent)]
-    Other(#[from] anyhow::Error),
+#[derive(Debug)]
+pub struct Output<'lines> {
+    filepath: PathBuf,
+    lines: &'lines [&'lines str],
+}
+
+impl Output<'_> {
+    pub fn error(&self, span: Span, message: String) {
+        let view = LineView::from_line(span.line, self.lines);
+        let span_error = SpanError {
+            view,
+            message,
+            span,
+        };
+        eprintln!(
+            "{level}: {path}\n{error}",
+            level = console::style("error").red(),
+            path = self.filepath.display(),
+            error = span_error,
+        );
+    }
 }
 
 #[derive(Debug, Error)]
-pub struct SpanError {
+pub struct SpanError<'lines> {
     message: String,
     span: Span,
-    view: LineView,
+    view: LineView<'lines>,
 }
 
-impl std::fmt::Display for SpanError {
+impl std::fmt::Display for SpanError<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for (line_number, line) in &self.view.before {
             writeln!(f, "{} {}", console::style(line_number).blue(), line)?;
@@ -156,40 +171,39 @@ impl std::fmt::Display for SpanError {
     }
 }
 
-pub fn compiler(input: &Path, output: &Path, options: Options) -> Result<bool, CompilerError> {
-    let content = std::fs::read_to_string(input).context("failed to read input file")?;
+pub fn compiler(
+    input_path: &Path,
+    output_path: &Path,
+    options: Options,
+    filepath: PathBuf,
+) -> Result<bool, anyhow::Error> {
+    let content = std::fs::read_to_string(input_path).context("failed to read input file")?;
     let lines: Vec<&str> = content.lines().collect();
+
+    let output = Output {
+        lines: &lines[..],
+        filepath,
+    };
 
     let tokens: Vec<_> = lexer::make_lexer(&lines[..])
         .collect::<Result<_, LexerError>>()
         .map_err(|source| {
-            CompilerError::Span(SpanError {
-                message: source.message.to_owned(),
-                span: Span {
-                    line: source.char_elem.line,
-                    start_position: source.char_elem.position,
-                    end_position: source.char_elem.position,
-                },
-                view: LineView::from_line(source.char_elem.line, &lines[..]),
-            })
+            let span = Span {
+                line: source.char_elem.line,
+                start_position: source.char_elem.position,
+                end_position: source.char_elem.position,
+            };
+            output.error(span, source.message.to_owned());
+            anyhow!("failed to lex file")
         })?;
     if options.lex {
         println!("{tokens:?}");
         return Ok(false);
     }
 
-    let program = ast::parse(tokens).map_err(|source| match source {
-        ParseError::WrongToken { message, span } => {
-            let view = LineView::from_line(span.line, &lines[..]);
-            CompilerError::Span(SpanError {
-                message,
-                span,
-                view,
-            })
-        }
-        ParseError::EarlyEnd(e) => {
-            CompilerError::Other(anyhow::anyhow!("unexpected early end: {e}"))
-        }
+    let program = ast::parse(tokens, &output).map_err(|source| match source {
+        ParseError::BadTokens => anyhow!("bad tokens"),
+        ParseError::EarlyEnd(e) => anyhow!("unexpected early end: {e}"),
     })?;
     if options.parse {
         println!("{program:#?}");
@@ -209,7 +223,7 @@ pub fn compiler(input: &Path, output: &Path, options: Options) -> Result<bool, C
     }
 
     let buf = format!("{assembly}");
-    std::fs::write(output, &buf[..]).context("failed to write to output file")?;
+    std::fs::write(output_path, &buf[..]).context("failed to write to output file")?;
 
     Ok(true)
 }

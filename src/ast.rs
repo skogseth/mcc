@@ -2,12 +2,12 @@ use std::iter::Peekable;
 use std::vec::IntoIter;
 
 use crate::lexer::{Keyword, Operator, Token, TokenElem};
-use crate::{Identifier, Span};
+use crate::{Identifier, Output, Span};
 
-pub fn parse(tokens: Vec<TokenElem>) -> Result<Program, ParseError> {
+pub fn parse(tokens: Vec<TokenElem>, output: &Output) -> Result<Program, ParseError> {
     let mut tokens = tokens.into_iter().peekable();
 
-    let main = Function::parse(&mut tokens)?;
+    let main = Function::parse(&mut tokens, output)?;
     assert_eq!(main.name.0.as_str(), "main");
 
     let remaining_tokens: Vec<TokenElem> = tokens.collect();
@@ -22,7 +22,7 @@ pub type TokenIter<'a> = Peekable<IntoIter<TokenElem>>;
 
 #[derive(Debug)]
 pub enum ParseError {
-    WrongToken { message: String, span: Span },
+    BadTokens,
     EarlyEnd(&'static str),
 }
 
@@ -42,27 +42,30 @@ pub struct Function {
 }
 
 impl Function {
-    fn parse(tokens: &mut TokenIter) -> Result<Self, ParseError> {
+    fn parse(tokens: &mut TokenIter, output: &Output) -> Result<Self, ParseError> {
         let TokenElem { token, span } = tokens.next().ok_or(ParseError::EarlyEnd("return type"))?;
         let Token::Keyword(Keyword::Int) = token else {
-            let message = format!("expected return type, found {token}");
-            return Err(ParseError::WrongToken { message, span });
+            output.error(span, format!("expected return type, found {token}"));
+            return Err(ParseError::BadTokens);
         };
 
         let TokenElem { token, span } = tokens
             .next()
             .ok_or(ParseError::EarlyEnd("function identifier"))?;
         let Token::Identifier(name) = token else {
-            let message = format!("expected function identifier, found {token}");
-            return Err(ParseError::WrongToken { message, span });
+            output.error(span, format!("expected function identifier, found {token}"));
+            return Err(ParseError::BadTokens);
         };
 
         let TokenElem { token, span } = tokens
             .next()
             .ok_or(ParseError::EarlyEnd("open-parenthesis"))?;
         let Token::OpenParenthesis = token else {
-            let message = format!("expected open-parenthesis for function {name}, found {token}");
-            return Err(ParseError::WrongToken { message, span });
+            output.error(
+                span,
+                format!("expected open-parenthesis for function {name}, found {token}"),
+            );
+            return Err(ParseError::BadTokens);
         };
 
         assert!(matches!(
@@ -77,14 +80,20 @@ impl Function {
             .next()
             .ok_or(ParseError::EarlyEnd("close-parenthesis"))?;
         let Token::CloseParenthesis = token else {
-            let message = format!("expected close-parenthesis for function {name}, found {token}");
-            return Err(ParseError::WrongToken { message, span });
+            output.error(
+                span,
+                format!("expected close-parenthesis for function {name}, found {token}"),
+            );
+            return Err(ParseError::BadTokens);
         };
 
         let TokenElem { token, span } = tokens.next().ok_or(ParseError::EarlyEnd("open brace"))?;
         let Token::OpenBrace = token else {
-            let message = format!("expected open brace for function {name}, found {token}");
-            return Err(ParseError::WrongToken { message, span });
+            output.error(
+                span,
+                format!("expected open brace for function {name}, found {token}"),
+            );
+            return Err(ParseError::BadTokens);
         };
 
         let mut body = Vec::new();
@@ -92,7 +101,7 @@ impl Function {
             let token_elem = tokens.peek().ok_or(ParseError::EarlyEnd("close brace"))?;
             match token_elem.token {
                 Token::CloseBrace => break,
-                _ => body.push(BlockItem::parse(tokens)?),
+                _ => body.push(BlockItem::parse(tokens, output)?),
             }
         }
 
@@ -122,11 +131,11 @@ pub enum BlockItem {
 }
 
 impl BlockItem {
-    fn parse(tokens: &mut TokenIter) -> Result<Self, ParseError> {
+    fn parse(tokens: &mut TokenIter, output: &Output) -> Result<Self, ParseError> {
         let token_elem = tokens.peek().ok_or(ParseError::EarlyEnd("block item"))?;
         match token_elem.token {
-            Token::Keyword(Keyword::Int) => Declaration::parse(tokens).map(BlockItem::D),
-            _ => Statement::parse(tokens).map(BlockItem::S),
+            Token::Keyword(Keyword::Int) => Declaration::parse(tokens, output).map(BlockItem::D),
+            _ => Statement::parse(tokens, output).map(BlockItem::S),
         }
     }
 
@@ -145,17 +154,18 @@ pub struct Declaration {
 }
 
 impl Declaration {
-    fn parse(tokens: &mut TokenIter) -> Result<Self, ParseError> {
+    fn parse(tokens: &mut TokenIter, output: &Output) -> Result<Self, ParseError> {
         let _typ = tokens.next().expect("can't parse decleration without type");
 
         let token_elem = tokens
             .next()
             .ok_or(ParseError::EarlyEnd("identifier in declaration"))?;
         let Token::Identifier(name) = token_elem.token else {
-            return Err(ParseError::WrongToken {
-                message: format!("expected type to be followed by identifier in declaration"),
-                span: token_elem.span,
-            });
+            output.error(
+                token_elem.span,
+                format!("expected type to be followed by identifier in declaration"),
+            );
+            return Err(ParseError::BadTokens);
         };
 
         let token_elem = tokens
@@ -163,8 +173,8 @@ impl Declaration {
             .ok_or(ParseError::EarlyEnd("either assignment or semicolon"))?;
         match token_elem.token {
             Token::Operator(Operator::Assignment) => {
-                let expr = Expression::parse(tokens)?;
-                remove_semicolon(tokens)?;
+                let expr = Expression::parse(tokens, output)?;
+                remove_semicolon(tokens, output)?;
                 Ok(Self {
                     name,
                     init: Some(expr),
@@ -172,12 +182,13 @@ impl Declaration {
             }
             Token::Semicolon => Ok(Self { name, init: None }),
 
-            _ => Err(ParseError::WrongToken {
-                message: String::from(
-                    "expected identifier in declaration to be followed by either assignment or semicolon",
-                ),
-                span: token_elem.span,
-            }),
+            _ => {
+                output.error(
+                    token_elem.span,
+                    String::from("expected identifier in declaration to be followed by either assignment or semicolon"),
+                );
+                Err(ParseError::BadTokens)
+            }
         }
     }
 
@@ -193,25 +204,28 @@ pub enum Statement {
     Null,
 }
 
-fn remove_semicolon(tokens: &mut TokenIter) -> Result<(), ParseError> {
+fn remove_semicolon(tokens: &mut TokenIter, output: &Output) -> Result<(), ParseError> {
     let token_elem = tokens.next().ok_or(ParseError::EarlyEnd("semicolon"))?;
     match token_elem.token {
         Token::Semicolon => Ok(()),
-        token => Err(ParseError::WrongToken {
-            message: format!("expected semicolon; found {token}"),
-            span: token_elem.span,
-        }),
+        token => {
+            output.error(
+                token_elem.span,
+                format!("expected semicolon; found {token}"),
+            );
+            Err(ParseError::BadTokens)
+        }
     }
 }
 
 impl Statement {
-    fn parse(tokens: &mut TokenIter) -> Result<Self, ParseError> {
+    fn parse(tokens: &mut TokenIter, output: &Output) -> Result<Self, ParseError> {
         let peeked = tokens.peek().ok_or(ParseError::EarlyEnd("statement"))?;
         match peeked.token {
             Token::Keyword(Keyword::Return) => {
                 let _ = tokens.next().expect("token must be return keyword");
-                let expr = Expression::parse(tokens)?;
-                remove_semicolon(tokens)?;
+                let expr = Expression::parse(tokens, output)?;
+                remove_semicolon(tokens, output)?;
                 Ok(Self::Return(expr))
             }
 
@@ -221,8 +235,8 @@ impl Statement {
             }
 
             _ => {
-                let expr = Expression::parse(tokens)?;
-                remove_semicolon(tokens)?;
+                let expr = Expression::parse(tokens, output)?;
+                remove_semicolon(tokens, output)?;
                 Ok(Self::Expression(expr))
             }
         }
@@ -250,12 +264,16 @@ pub enum Expression {
 }
 
 impl Expression {
-    fn parse(tokens: &mut TokenIter) -> Result<Self, ParseError> {
-        Self::parse_expr(tokens, 0)
+    fn parse(tokens: &mut TokenIter, output: &Output) -> Result<Self, ParseError> {
+        Self::parse_expr(tokens, 0, output)
     }
 
-    fn parse_expr(tokens: &mut TokenIter, min_prec: u32) -> Result<Self, ParseError> {
-        let mut left = Self::parse_factor(tokens)?;
+    fn parse_expr(
+        tokens: &mut TokenIter,
+        min_prec: u32,
+        output: &Output,
+    ) -> Result<Self, ParseError> {
+        let mut left = Self::parse_factor(tokens, output)?;
 
         while let Some(bin_op) = tokens.peek().and_then(|e| BinaryOperator::parse(&e.token)) {
             let precedence = bin_op.precedence();
@@ -270,11 +288,11 @@ impl Expression {
 
             match bin_op {
                 BinaryOperator::Assignment => {
-                    let right = Self::parse_expr(tokens, precedence)?;
+                    let right = Self::parse_expr(tokens, precedence, output)?;
                     left = Expression::Assignment(Box::new(left), Box::new(right));
                 }
                 _ => {
-                    let right = Self::parse_expr(tokens, precedence + 1)?;
+                    let right = Self::parse_expr(tokens, precedence + 1, output)?;
                     left = Expression::Binary(bin_op, Box::new(left), Box::new(right));
                 }
             }
@@ -283,7 +301,7 @@ impl Expression {
         Ok(left)
     }
 
-    fn parse_factor(tokens: &mut TokenIter) -> Result<Self, ParseError> {
+    fn parse_factor(tokens: &mut TokenIter, output: &Output) -> Result<Self, ParseError> {
         let token_elem = tokens
             .next()
             .ok_or(ParseError::EarlyEnd("no token found for expression"))?;
@@ -296,36 +314,42 @@ impl Expression {
             // --- Parse unary operators ---
             Token::Operator(Operator::Minus) => Ok(Self::Unary(
                 UnaryOperator::Negate,
-                Box::new(Self::parse_factor(tokens)?),
+                Box::new(Self::parse_factor(tokens, output)?),
             )),
             Token::Operator(Operator::Tilde) => Ok(Self::Unary(
                 UnaryOperator::Complement,
-                Box::new(Self::parse_factor(tokens)?),
+                Box::new(Self::parse_factor(tokens, output)?),
             )),
             Token::Operator(Operator::Not) => Ok(Self::Unary(
                 UnaryOperator::Not,
-                Box::new(Self::parse_factor(tokens)?),
+                Box::new(Self::parse_factor(tokens, output)?),
             )),
 
             Token::OpenParenthesis => {
-                let expr = Self::parse_expr(tokens, 0)?;
+                let expr = Self::parse_expr(tokens, 0, output)?;
 
                 let next_token = tokens
                     .next()
                     .ok_or(ParseError::EarlyEnd("close parenthesis"))?;
                 match next_token.token {
                     Token::CloseParenthesis => Ok(expr),
-                    t => Err(ParseError::WrongToken {
-                        message: format!("expected close parenthesis, found {t}"),
-                        span: next_token.span,
-                    }),
+                    t => {
+                        output.error(
+                            next_token.span,
+                            format!("expected close parenthesis, found {t}"),
+                        );
+                        Err(ParseError::BadTokens)
+                    }
                 }
             }
 
-            t => Err(ParseError::WrongToken {
-                message: format!("unknown token found for expression: {t}"),
-                span: token_elem.span,
-            }),
+            t => {
+                output.error(
+                    token_elem.span,
+                    format!("unknown token found for expression: {t}"),
+                );
+                Err(ParseError::BadTokens)
+            }
         }
     }
 
