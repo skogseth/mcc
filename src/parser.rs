@@ -97,12 +97,21 @@ impl Function {
         };
 
         let mut body = Vec::new();
+        let mut encountered_bad_tokens = false;
         loop {
             let token_elem = tokens.peek().ok_or(ParseError::EarlyEnd("close brace"))?;
             match token_elem.token {
                 Token::CloseBrace => break,
-                _ => body.push(BlockItem::parse(tokens, output)?),
+                _ => match BlockItem::parse(tokens, output) {
+                    Ok(block_item) => body.push(block_item),
+                    Err(ParseError::BadTokens) => encountered_bad_tokens = true,
+                    Err(e @ ParseError::EarlyEnd(_)) => return Err(e),
+                },
             }
+        }
+
+        if encountered_bad_tokens {
+            return Err(ParseError::BadTokens);
         }
 
         let TokenElem { token, .. } = tokens.next().expect("close brace");
@@ -173,8 +182,7 @@ impl Declaration {
             .ok_or(ParseError::EarlyEnd("either assignment or semicolon"))?;
         match token_elem.token {
             Token::Operator(Operator::Assignment) => {
-                let expr = Expression::parse(tokens, output)?;
-                remove_semicolon(tokens, output)?;
+                let expr = take_expr(tokens, output)?;
                 Ok(Self {
                     name,
                     init: Some(expr),
@@ -204,18 +212,29 @@ pub enum Statement {
     Null,
 }
 
-fn remove_semicolon(tokens: &mut TokenIter, output: &Output) -> Result<(), ParseError> {
-    let token_elem = tokens.next().ok_or(ParseError::EarlyEnd("semicolon"))?;
-    match token_elem.token {
-        Token::Semicolon => Ok(()),
-        token => {
-            output.error(
-                token_elem.span,
-                format!("expected semicolon; found {token}"),
-            );
-            Err(ParseError::BadTokens)
+fn take_expr(tokens: &mut TokenIter, output: &Output) -> Result<Expression, ParseError> {
+    match Expression::parse(tokens, output) {
+        Ok(expr) => {
+            let next = tokens.next().ok_or(ParseError::EarlyEnd("statement"))?;
+            match next.token {
+                Token::Semicolon => return Ok(expr),
+                _ => output.error(next.span, String::from("expected semicolon")),
+            }
+        }
+        Err(ParseError::BadTokens) => {}
+        Err(e @ ParseError::EarlyEnd(_)) => return Err(e),
+    };
+
+    // We know keep taking tokens until we find a semicolon
+    loop {
+        let next = tokens.next().ok_or(ParseError::EarlyEnd("statement"))?;
+        match next.token {
+            Token::Semicolon => break,
+            _ => output.warning(next.span, String::from("not parsed")),
         }
     }
+
+    Err(ParseError::BadTokens)
 }
 
 impl Statement {
@@ -224,8 +243,7 @@ impl Statement {
         match peeked.token {
             Token::Keyword(Keyword::Return) => {
                 let _ = tokens.next().expect("token must be return keyword");
-                let expr = Expression::parse(tokens, output)?;
-                remove_semicolon(tokens, output)?;
+                let expr = take_expr(tokens, output)?;
                 Ok(Self::Return(expr))
             }
 
@@ -235,8 +253,7 @@ impl Statement {
             }
 
             _ => {
-                let expr = Expression::parse(tokens, output)?;
-                remove_semicolon(tokens, output)?;
+                let expr = take_expr(tokens, output)?;
                 Ok(Self::Expression(expr))
             }
         }
@@ -343,10 +360,10 @@ impl Expression {
                 }
             }
 
-            t => {
+            _ => {
                 output.error(
                     token_elem.span,
-                    format!("unknown token found for expression: {t}"),
+                    format!("unexpected token found for expression"),
                 );
                 Err(ParseError::BadTokens)
             }

@@ -205,7 +205,7 @@ impl std::fmt::Display for Token {
             Self::Identifier(name) => write!(f, "identifier `{name}`"),
             Self::Constant(i) => write!(f, "constant with value `{i}`"),
             Self::Keyword(keyword) => write!(f, "keyword `{keyword}`"),
-            Self::Operator(op) => write!(f, "{op:?}"),
+            Self::Operator(op) => write!(f, "`{op}` (operator)"),
             Self::OpenParenthesis => f.write_str("`(`"),
             Self::CloseParenthesis => f.write_str("`)`"),
             Self::OpenBrace => f.write_str("`{`"),
@@ -269,6 +269,35 @@ pub enum Operator {
     GreaterThan,    // >
     LessOrEqual,    // <=
     GreaterOrEqual, // <=
+}
+
+impl std::fmt::Display for Operator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Assignment => f.write_str("="),
+            Self::Plus => f.write_str("+"),
+            Self::Minus => f.write_str("-"),
+
+            Self::Increment => f.write_str("++"),
+            Self::Decrement => f.write_str("--"),
+
+            Self::Asterisk => f.write_str("*"),
+            Self::Slash => f.write_str("/"),
+            Self::Percent => f.write_str("%"),
+            Self::Tilde => f.write_str("~"),
+
+            Self::Not => f.write_str("!"),
+            Self::And => f.write_str("&&"),
+            Self::Or => f.write_str("||"),
+
+            Self::Equal => f.write_str("=="),
+            Self::NotEqual => f.write_str("!="),
+            Self::LessThan => f.write_str("<"),
+            Self::GreaterThan => f.write_str(">"),
+            Self::LessOrEqual => f.write_str("<="),
+            Self::GreaterOrEqual => f.write_str("<="),
+        }
+    }
 }
 
 #[cfg(test)]

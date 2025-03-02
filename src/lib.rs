@@ -110,11 +110,27 @@ impl Output<'static> {
 }
 
 impl Output<'_> {
+    pub fn warning(&self, span: Span, message: String) {
+        let span_error = SpanError {
+            message,
+            span,
+            lines: &self.lines,
+            style: console::Style::new().yellow(),
+        };
+        eprintln!(
+            "{level}: {path}\n{error}",
+            level = console::style("warning").yellow(),
+            path = self.filepath.display(),
+            error = span_error,
+        );
+    }
+
     pub fn error(&self, span: Span, message: String) {
         let span_error = SpanError {
             message,
             span,
             lines: &self.lines,
+            style: console::Style::new().red(),
         };
         eprintln!(
             "{level}: {path}\n{error}",
@@ -130,6 +146,7 @@ pub struct SpanError<'lines> {
     message: String,
     span: Span,
     lines: &'lines [&'lines str],
+    style: console::Style,
 }
 
 impl std::fmt::Display for SpanError<'_> {
@@ -146,14 +163,14 @@ impl std::fmt::Display for SpanError<'_> {
             writeln!(f, "{} {}", console::style(line_number).blue(), line)?;
         }
 
+        let marker_length = self.span.end_position - self.span.start_position + 1;
         writeln!(
             f,
-            "| {fill}{marker} {message}",
+            "{line} {fill}{marker} {message}",
+            line = console::style("|").blue(),
             fill = " ".repeat(self.span.start_position),
-            marker =
-                console::style("^".repeat(self.span.end_position - self.span.start_position + 1))
-                    .red(),
-            message = console::style(&self.message).red(),
+            marker = self.style.apply_to("^".repeat(marker_length)),
+            message = self.style.apply_to(&self.message),
         )?;
 
         let after = (correct_line_number..=upper_line_number).map(|i| (i, self.lines[i]));
