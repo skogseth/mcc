@@ -79,6 +79,8 @@ fn resolve_expression(
                 Ok(())
             }
             _ => {
+                // TODO: Output proper error message here
+                // NOTE: This is blocked by multi-line span
                 eprintln!("invalid lvalue encountered");
                 Err(ValidationError)
             }
