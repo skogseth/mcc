@@ -2,7 +2,7 @@ use std::iter::Peekable;
 use std::vec::IntoIter;
 
 use crate::lexer::{Keyword, Operator, Token, TokenElem};
-use crate::{Identifier, Output, Span};
+use crate::{Identifier, Output};
 
 pub fn parse(tokens: Vec<TokenElem>, output: &Output) -> Result<Program, ParseError> {
     let mut tokens = tokens.into_iter().peekable();
@@ -541,7 +541,13 @@ impl BinaryOperator {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::LazyLock;
+
+    use crate::Span;
+
     use super::*;
+
+    static DUMMY_OUTPUT: LazyLock<Output<'static>> = LazyLock::new(Output::dummy);
 
     #[test]
     fn binary_operators() {
@@ -559,7 +565,7 @@ mod tests {
             .collect();
         let mut tokens = tokens.into_iter().peekable();
 
-        let parsed = Expression::parse(&mut tokens).unwrap();
+        let parsed = Expression::parse(&mut tokens, &DUMMY_OUTPUT).unwrap();
 
         assert_eq!(
             parsed,
@@ -589,7 +595,7 @@ mod tests {
             .collect();
         let mut tokens = tokens.into_iter().peekable();
 
-        let parsed = Expression::parse(&mut tokens).unwrap();
+        let parsed = Expression::parse(&mut tokens, &DUMMY_OUTPUT).unwrap();
 
         assert_eq!(
             parsed,
@@ -623,7 +629,7 @@ mod tests {
             .collect();
         let mut tokens = tokens.into_iter().peekable();
 
-        let parsed = Expression::parse(&mut tokens).unwrap();
+        let parsed = Expression::parse(&mut tokens, &DUMMY_OUTPUT).unwrap();
 
         assert_eq!(
             parsed,
@@ -656,7 +662,7 @@ mod tests {
             .collect();
         let mut tokens = tokens.into_iter().peekable();
 
-        let parsed = Expression::parse(&mut tokens).unwrap();
+        let parsed = Expression::parse(&mut tokens, &DUMMY_OUTPUT).unwrap();
 
         assert_eq!(
             parsed,
@@ -699,7 +705,7 @@ mod tests {
 
         let mut tokens = tokens.into_iter().peekable();
 
-        let parsed = Expression::parse(&mut tokens).unwrap();
+        let parsed = Expression::parse(&mut tokens, &DUMMY_OUTPUT).unwrap();
 
         assert_eq!(
             parsed,
@@ -749,7 +755,7 @@ mod tests {
         );
 
         let mut tokens = tokens.into_iter().peekable();
-        let parsed = Expression::parse(&mut tokens).unwrap();
+        let parsed = Expression::parse(&mut tokens, &DUMMY_OUTPUT).unwrap();
 
         assert_eq!(
             parsed,

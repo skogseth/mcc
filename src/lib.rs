@@ -99,6 +99,16 @@ pub struct Output<'lines> {
     lines: &'lines [&'lines str],
 }
 
+impl Output<'static> {
+    #[cfg(test)]
+    pub(crate) fn dummy() -> Self {
+        Self {
+            filepath: PathBuf::from("this/is/not/a/path"),
+            lines: &["this is not a line"],
+        }
+    }
+}
+
 impl Output<'_> {
     pub fn error(&self, span: Span, message: String) {
         let span_error = SpanError {
