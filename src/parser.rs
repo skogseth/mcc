@@ -37,8 +37,8 @@ impl Program {
 
 #[derive(Debug, Clone)]
 pub struct Function {
-    name: Identifier,
-    body: Vec<BlockItem>,
+    pub name: Identifier,
+    pub body: Vec<BlockItem>,
 }
 
 impl Function {
@@ -159,6 +159,7 @@ impl BlockItem {
 #[derive(Debug, Clone)]
 pub struct Declaration {
     pub name: Identifier,
+    pub name_span: Span,
     pub init: Option<Expression>,
 }
 
@@ -166,38 +167,39 @@ impl Declaration {
     fn parse(tokens: &mut TokenIter, output: &Output) -> Result<Self, ParseError> {
         let _typ = tokens.next().expect("can't parse decleration without type");
 
-        let token_elem = tokens
+        let name_elem = tokens
             .next()
             .ok_or(ParseError::EarlyEnd("identifier in declaration"))?;
-        let Token::Identifier(name) = token_elem.token else {
+        let Token::Identifier(name) = name_elem.token else {
             output.error(
-                token_elem.span,
+                name_elem.span,
                 format!("expected type to be followed by identifier in declaration"),
             );
             return Err(ParseError::BadTokens);
         };
 
-        let token_elem = tokens
-            .next()
-            .ok_or(ParseError::EarlyEnd("either assignment or semicolon"))?;
-        match token_elem.token {
-            Token::Operator(Operator::Assignment) => {
-                let expr = take_expr(tokens, output)?;
-                Ok(Self {
-                    name,
-                    init: Some(expr),
-                })
+        let init = {
+            let token_elem = tokens
+                .next()
+                .ok_or(ParseError::EarlyEnd("either assignment or semicolon"))?;
+            match token_elem.token {
+                Token::Operator(Operator::Assignment) => Some(take_expr(tokens, output)?),
+                Token::Semicolon => None,
+                _ => {
+                    output.error(
+                        token_elem.span,
+                        String::from("expected identifier in declaration to be followed by either assignment or semicolon"),
+                    );
+                    return Err(ParseError::BadTokens);
+                }
             }
-            Token::Semicolon => Ok(Self { name, init: None }),
+        };
 
-            _ => {
-                output.error(
-                    token_elem.span,
-                    String::from("expected identifier in declaration to be followed by either assignment or semicolon"),
-                );
-                Err(ParseError::BadTokens)
-            }
-        }
+        Ok(Self {
+            name,
+            name_span: name_elem.span,
+            init,
+        })
     }
 
     fn emit_tacky(self, instructions: &mut Vec<crate::tacky::Instruction>) {
@@ -284,9 +286,15 @@ impl Statement {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Variable {
+    pub name: Identifier,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expression {
     Constant(i64),
-    Var(Identifier),
+    Var(Variable),
     Unary(UnaryOperator, Box<Expression>),
     Binary(BinaryOperator, Box<Expression>, Box<Expression>),
     Assignment(Box<Expression>, Box<Expression>),
@@ -338,7 +346,10 @@ impl Expression {
         match token_elem.token {
             Token::Constant(i) => Ok(Expression::Constant(i)),
 
-            Token::Identifier(identifier) => Ok(Expression::Var(identifier)),
+            Token::Identifier(identifier) => Ok(Expression::Var(Variable {
+                name: identifier,
+                span: token_elem.span,
+            })),
 
             // --- Parse unary operators ---
             Token::Operator(Operator::Minus) => Ok(Self::Unary(

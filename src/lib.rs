@@ -10,6 +10,7 @@ mod assembly;
 mod lexer;
 mod parser;
 mod tacky;
+mod validate;
 
 use self::parser::ParseError;
 
@@ -23,13 +24,16 @@ pub struct Options {
     pub parse: bool,
 
     #[arg(long)]
+    pub validate: bool,
+
+    #[arg(long)]
     pub tacky: bool,
 
     #[arg(long)]
     pub codegen: bool,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Identifier(pub String);
 
 impl Identifier {
@@ -212,12 +216,18 @@ pub fn compiler(
         return Ok(false);
     }
 
-    let program = parser::parse(tokens, &output).map_err(|source| match source {
+    let mut program = parser::parse(tokens, &output).map_err(|source| match source {
         ParseError::BadTokens => None,
         ParseError::EarlyEnd(e) => Some(anyhow!("unexpected early end: {e}")),
     })?;
     if options.parse {
         println!("{program:#?}");
+        return Ok(false);
+    }
+
+    validate::main(&mut program, &output).map_err(|_| None)?;
+    if options.validate {
+        println!("validation succeeded");
         return Ok(false);
     }
 
