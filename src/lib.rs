@@ -7,11 +7,11 @@ use lexer::{CharElem, LexerError};
 use thiserror::Error;
 
 mod assembly;
-mod ast;
 mod lexer;
+mod parser;
 mod tacky;
 
-use self::ast::ParseError;
+use self::parser::ParseError;
 
 #[derive(Debug, Clone, Args)]
 #[group(required = false, multiple = false)]
@@ -195,7 +195,7 @@ pub fn compiler(
         return Ok(false);
     }
 
-    let program = ast::parse(tokens, &output).map_err(|source| match source {
+    let program = parser::parse(tokens, &output).map_err(|source| match source {
         ParseError::BadTokens => anyhow!("bad tokens"),
         ParseError::EarlyEnd(e) => anyhow!("unexpected early end: {e}"),
     })?;

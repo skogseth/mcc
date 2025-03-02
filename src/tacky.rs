@@ -1,5 +1,5 @@
 use crate::Identifier;
-use crate::ast::{BinaryOperator, UnaryOperator};
+use crate::parser::{BinaryOperator, UnaryOperator};
 
 #[derive(Debug, Clone)]
 pub struct Program(pub Function);
