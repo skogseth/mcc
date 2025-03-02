@@ -187,7 +187,7 @@ pub fn compiler(
     output_path: &Path,
     options: Options,
     filepath: PathBuf,
-) -> Result<bool, anyhow::Error> {
+) -> Result<bool, Option<anyhow::Error>> {
     let content = std::fs::read_to_string(input_path).context("failed to read input file")?;
     let lines: Vec<&str> = content.lines().collect();
 
@@ -213,8 +213,8 @@ pub fn compiler(
     }
 
     let program = parser::parse(tokens, &output).map_err(|source| match source {
-        ParseError::BadTokens => anyhow!("bad tokens"),
-        ParseError::EarlyEnd(e) => anyhow!("unexpected early end: {e}"),
+        ParseError::BadTokens => None,
+        ParseError::EarlyEnd(e) => Some(anyhow!("unexpected early end: {e}")),
     })?;
     if options.parse {
         println!("{program:#?}");

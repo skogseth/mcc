@@ -2,7 +2,7 @@ use std::iter::Peekable;
 use std::vec::IntoIter;
 
 use crate::lexer::{Keyword, Operator, Token, TokenElem};
-use crate::{Identifier, Output};
+use crate::{Identifier, Output, Span};
 
 pub fn parse(tokens: Vec<TokenElem>, output: &Output) -> Result<Program, ParseError> {
     let mut tokens = tokens.into_iter().peekable();
@@ -226,11 +226,23 @@ fn take_expr(tokens: &mut TokenIter, output: &Output) -> Result<Expression, Pars
     };
 
     // We know keep taking tokens until we find a semicolon
+    let mut span = None;
     loop {
-        let next = tokens.next().ok_or(ParseError::EarlyEnd("statement"))?;
-        match next.token {
-            Token::Semicolon => break,
-            _ => output.warning(next.span, String::from("not parsed")),
+        let elem = tokens.next().ok_or(ParseError::EarlyEnd("statement"))?;
+
+        if matches!(elem.token, Token::Semicolon) {
+            if let Some(current_span) = span {
+                output.warning(current_span, String::from("not parsed"));
+            }
+            break;
+        }
+
+        let current_span: &mut Span = span.get_or_insert(elem.span);
+        if elem.span.line != current_span.line {
+            output.warning(*current_span, String::from("not parsed"));
+            *current_span = elem.span;
+        } else {
+            current_span.end_position = elem.span.end_position;
         }
     }
 

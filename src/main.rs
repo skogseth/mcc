@@ -54,8 +54,10 @@ fn main() -> Result<(), anyhow::Error> {
             produce_executable(&assembly_file, &executable_file)?;
             Ok(())
         }
-        Err(e) => {
-            eprintln!("{e}");
+        Err(maybe_error_message) => {
+            if let Some(error) = maybe_error_message {
+                eprintln!("{error}");
+            }
             std::process::exit(1);
         }
     }
