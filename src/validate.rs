@@ -72,19 +72,18 @@ fn resolve_expression(
     output: &Output,
 ) -> Result<(), ValidationError> {
     match expression {
-        p::Expression::Assignment(left, right) => match &**left {
-            p::Expression::Var(_) => {
-                resolve_expression(left, variable_map, output)?;
-                resolve_expression(right, variable_map, output)?;
-                Ok(())
-            }
-            _ => {
+        p::Expression::Assignment(left, right) => {
+            if !matches!(&**left, p::Expression::Var(_)) {
                 // TODO: Output proper error message here
                 // NOTE: This is blocked by multi-line span
                 eprintln!("invalid lvalue encountered");
-                Err(ValidationError)
+                return Err(ValidationError);
             }
-        },
+
+            let result_left = resolve_expression(left, variable_map, output);
+            let result_right = resolve_expression(right, variable_map, output);
+            result_left.and(result_right)
+        }
 
         p::Expression::Var(variable) => {
             let unique_name = variable_map.get(&variable.name).cloned().ok_or_else(|| {
@@ -95,6 +94,14 @@ fn resolve_expression(
             Ok(())
         }
 
-        _ => Ok(()), // nothing to do
+        p::Expression::Unary(_, expr) => resolve_expression(expr, variable_map, output),
+
+        p::Expression::Binary(_, left, right) => {
+            let result_left = resolve_expression(left, variable_map, output);
+            let result_right = resolve_expression(right, variable_map, output);
+            result_left.and(result_right)
+        }
+
+        p::Expression::Constant(_) => Ok(()), // nothing to do
     }
 }
