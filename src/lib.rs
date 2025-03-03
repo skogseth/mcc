@@ -221,13 +221,13 @@ pub fn compiler(
         ParseError::EarlyEnd(e) => Some(anyhow!("unexpected early end: {e}")),
     })?;
     if options.parse {
-        println!("{program:#?}");
+        println!("parsing succeeded, program:\n{program:#?}");
         return Ok(false);
     }
 
     validate::main(&mut program, &output).map_err(|_| None)?;
     if options.validate {
-        println!("validation succeeded");
+        println!("validation succeeded, new program:\n{program:#?}");
         return Ok(false);
     }
 

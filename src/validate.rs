@@ -5,7 +5,7 @@ use crate::Output;
 use crate::parser as p;
 
 /// A map containing unique names for each identifier
-type VariableMap<'original> = HashMap<&'original Identifier, Identifier>;
+type VariableMap = HashMap<Identifier, Identifier>;
 
 #[derive(Debug, Clone)]
 pub struct ValidationError;
@@ -31,9 +31,9 @@ pub fn main(program: &mut p::Program, output: &Output) -> Result<(), ValidationE
     }
 }
 
-fn resolve_decleration<'decl>(
-    decleration: &'decl mut p::Declaration,
-    variable_map: &mut VariableMap<'decl>,
+fn resolve_decleration(
+    decleration: &mut p::Declaration,
+    variable_map: &mut VariableMap,
     output: &Output,
 ) -> Result<(), ValidationError> {
     if variable_map.contains_key(&decleration.name) {
@@ -45,7 +45,11 @@ fn resolve_decleration<'decl>(
     }
 
     let unique_name = Identifier::new_label(&decleration.name.0);
-    variable_map.insert(&decleration.name, unique_name);
+
+    // Retrieve the original name and replace it with the new unique name.
+    let original_name = std::mem::replace(&mut decleration.name, unique_name.clone());
+
+    variable_map.insert(original_name, unique_name);
 
     if let Some(init) = &mut decleration.init {
         resolve_expression(init, variable_map, output)?;
