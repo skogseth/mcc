@@ -233,7 +233,7 @@ pub fn compiler(
 
     let tacky = program.emit_tacky();
     if options.tacky {
-        println!("{tacky:#?}");
+        println!("{tacky}");
         return Ok(false);
     }
 

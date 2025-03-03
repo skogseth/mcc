@@ -549,6 +549,16 @@ pub enum UnaryOperator {
     Not,
 }
 
+impl std::fmt::Display for UnaryOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Complement => f.write_str("~"),
+            Self::Negate => f.write_str("-"),
+            Self::Not => f.write_str("!"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOperator {
     // Special
@@ -612,6 +622,27 @@ impl BinaryOperator {
             Self::And => 10,
             Self::Or => 5,
             Self::Assignment => 1,
+        }
+    }
+}
+
+impl std::fmt::Display for BinaryOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Assignment => f.write_str("="),
+            Self::Add => f.write_str("+"),
+            Self::Subtract => f.write_str("-"),
+            Self::Multiply => f.write_str("*"),
+            Self::Divide => f.write_str("/"),
+            Self::Remainder => f.write_str("%"),
+            Self::And => f.write_str("&&"),
+            Self::Or => f.write_str("||"),
+            Self::Equal => f.write_str("=="),
+            Self::NotEqual => f.write_str("!="),
+            Self::LessThan => f.write_str("<"),
+            Self::LessOrEqual => f.write_str("<="),
+            Self::GreaterThan => f.write_str(">"),
+            Self::GreaterOrEqual => f.write_str(">="),
         }
     }
 }
