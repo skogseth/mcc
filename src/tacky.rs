@@ -10,6 +10,12 @@ impl Program {
     }
 }
 
+impl std::fmt::Display for Program {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Function {
     pub name: Identifier,
@@ -32,6 +38,18 @@ impl Function {
             instructions,
             stack_offset: offset.abs() as u32,
         }
+    }
+}
+
+impl std::fmt::Display for Function {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{}:", self.name)?;
+
+        for instruction in &self.body {
+            writeln!(f, "{instruction}")?;
+        }
+
+        Ok(())
     }
 }
 
@@ -214,6 +232,30 @@ impl Instruction {
     }
 }
 
+impl std::fmt::Display for Instruction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Return(value) => write!(f, "return {value}"),
+            Self::Unary { op, src, dst } => write!(f, "{dst} = {op}{src}"),
+            Self::Binary {
+                op,
+                src_1,
+                src_2,
+                dst,
+            } => write!(f, "{dst} = {src_1} {op} {src_2}"),
+            Self::Copy { src, dst } => write!(f, "{dst} = {src}"),
+            Self::Jump { target } => write!(f, "jump -> {target}"),
+            Self::JumpIfZero { condition, target } => {
+                write!(f, "if ({condition} == 0): jump -> {target}")
+            }
+            Self::JumpIfNotZero { condition, target } => {
+                write!(f, "if ({condition} != 0): jump -> {target}")
+            }
+            Self::Label(identifier) => write!(f, "label: {identifier}"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Value {
     Constant(i64),
@@ -229,11 +271,26 @@ impl Value {
     }
 }
 
+impl std::fmt::Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Constant(i) => write!(f, "{i}"),
+            Self::Variable(var) => write!(f, "{var}"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Variable(pub Identifier);
 
 impl Variable {
     pub fn assembly(self) -> crate::assembly::Operand {
         crate::assembly::Operand::Pseudo(self.0)
+    }
+}
+
+impl std::fmt::Display for Variable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
     }
 }

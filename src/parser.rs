@@ -126,6 +126,17 @@ impl Function {
             block_item.emit_tacky(&mut instructions);
         }
 
+        // Sometimes C is a very strange language...
+        // A function is allowed to not return a value
+        // If the function is `main`, this should implicitly return `0`
+        // If the function is _not_ `main` then it is only undefined
+        // behavior if another function tries to use the value that was
+        // returned, otherwise it's completely fine. The simplest way
+        // to satisfy this strange set of requirements is to always append
+        // an addition `return 0` to any function.
+        let block_item = BlockItem::S(Statement::Return(Expression::Constant(0)));
+        block_item.emit_tacky(&mut instructions);
+
         crate::tacky::Function {
             name: self.name,
             body: instructions,
@@ -203,7 +214,14 @@ impl Declaration {
     }
 
     fn emit_tacky(self, instructions: &mut Vec<crate::tacky::Instruction>) {
-        todo!()
+        // We only need to emit tacky in the case where we have an init expression
+        if let Some(init) = &self.init {
+            let result = init.emit_tacky(instructions);
+            instructions.push(crate::tacky::Instruction::Copy {
+                src: result,
+                dst: crate::tacky::Variable(self.name.clone()),
+            });
+        }
     }
 }
 
@@ -279,8 +297,11 @@ impl Statement {
                 let value = expr.emit_tacky(instructions);
                 instructions.push(crate::tacky::Instruction::Return(value));
             }
-            Self::Expression(expr) => todo!(),
-            Self::Null => todo!(),
+            Self::Expression(expr) => {
+                // Don't do anything with the returned temporary
+                let _ = expr.emit_tacky(instructions);
+            }
+            Self::Null => {} // nothing to do
         }
     }
 }
@@ -397,7 +418,9 @@ impl Expression {
         match self {
             Self::Constant(c) => crate::tacky::Value::Constant(*c),
 
-            Self::Var(ident) => todo!(),
+            Self::Var(Variable { name, .. }) => {
+                return crate::tacky::Value::Variable(crate::tacky::Variable(name.clone()));
+            }
 
             Self::Unary(unary_op, expr) => {
                 let src = expr.emit_tacky(instructions);
@@ -500,7 +523,21 @@ impl Expression {
                 crate::tacky::Value::Variable(dst)
             }
 
-            Self::Assignment(expr_1, expr_2) => todo!(),
+            Self::Assignment(expr_1, expr_2) => {
+                let Expression::Var(var) = &**expr_1 else {
+                    panic!("unexpected expression found in assignment");
+                };
+                let var = crate::tacky::Variable(var.name.clone());
+
+                let result = expr_2.emit_tacky(instructions);
+
+                instructions.push(crate::tacky::Instruction::Copy {
+                    src: result,
+                    dst: var.clone(),
+                });
+
+                return crate::tacky::Value::Variable(var);
+            }
         }
     }
 }
@@ -510,6 +547,16 @@ pub enum UnaryOperator {
     Complement,
     Negate,
     Not,
+}
+
+impl std::fmt::Display for UnaryOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Complement => f.write_str("~"),
+            Self::Negate => f.write_str("-"),
+            Self::Not => f.write_str("!"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -575,6 +622,27 @@ impl BinaryOperator {
             Self::And => 10,
             Self::Or => 5,
             Self::Assignment => 1,
+        }
+    }
+}
+
+impl std::fmt::Display for BinaryOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Assignment => f.write_str("="),
+            Self::Add => f.write_str("+"),
+            Self::Subtract => f.write_str("-"),
+            Self::Multiply => f.write_str("*"),
+            Self::Divide => f.write_str("/"),
+            Self::Remainder => f.write_str("%"),
+            Self::And => f.write_str("&&"),
+            Self::Or => f.write_str("||"),
+            Self::Equal => f.write_str("=="),
+            Self::NotEqual => f.write_str("!="),
+            Self::LessThan => f.write_str("<"),
+            Self::LessOrEqual => f.write_str("<="),
+            Self::GreaterThan => f.write_str(">"),
+            Self::GreaterOrEqual => f.write_str(">="),
         }
     }
 }
