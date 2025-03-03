@@ -216,7 +216,11 @@ impl Declaration {
     fn emit_tacky(self, instructions: &mut Vec<crate::tacky::Instruction>) {
         // We only need to emit tacky in the case where we have an init expression
         if let Some(init) = &self.init {
-            init.emit_tacky(instructions);
+            let result = init.emit_tacky(instructions);
+            instructions.push(crate::tacky::Instruction::Copy {
+                src: result,
+                dst: crate::tacky::Variable(self.name.clone()),
+            });
         }
     }
 }
