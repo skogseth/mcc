@@ -3,7 +3,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::{Context, anyhow};
 use clap::Args;
-use lexer::{CharElem, LexerError};
 use thiserror::Error;
 
 mod assembly;
@@ -12,7 +11,8 @@ mod parser;
 mod tacky;
 mod validate;
 
-use self::parser::ParseError;
+use crate::lexer::{CharElem, LexerError};
+use crate::parser::ParseError;
 
 #[derive(Debug, Clone, Args)]
 #[group(required = false, multiple = false)]
@@ -118,7 +118,7 @@ impl Output<'_> {
         let span_error = SpanError {
             message,
             span,
-            lines: &self.lines,
+            lines: self.lines,
             style: console::Style::new().yellow(),
         };
         eprintln!(
@@ -133,7 +133,7 @@ impl Output<'_> {
         let span_error = SpanError {
             message,
             span,
-            lines: &self.lines,
+            lines: self.lines,
             style: console::Style::new().red(),
         };
         eprintln!(
@@ -239,7 +239,7 @@ pub fn compiler(
 
     let assembly = tacky.assembly();
     if options.codegen {
-        println!("{assembly:#?}");
+        println!("{assembly}");
         return Ok(false);
     }
 

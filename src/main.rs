@@ -1,5 +1,3 @@
-use std::fs::File;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -80,27 +78,6 @@ fn preprocessor(input: &Path, output: &Path) -> Result<(), anyhow::Error> {
             String::from_utf8_lossy(&output.stderr),
         ));
     }
-
-    Ok(())
-}
-
-#[allow(unused)]
-fn dummy_compiler(_input: &Path, output: &Path) -> Result<(), anyhow::Error> {
-    let mut file = File::create(output).context("failed to open file")?;
-
-    #[rustfmt::skip]
-    let content = String::from(
-r#"
-	.globl	_main                           ## -- Begin function main
-_main:                                  ## @main
-	movl	$2, %eax
-	ret
-                                        ## -- End function
-"#
-    );
-
-    file.write_all(content.as_bytes())
-        .context("failed to write assembly file")?;
 
     Ok(())
 }
