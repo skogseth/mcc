@@ -118,7 +118,7 @@ impl Output<'_> {
         let span_error = SpanError {
             message,
             span,
-            lines: &self.lines,
+            lines: self.lines,
             style: console::Style::new().yellow(),
         };
         eprintln!(
@@ -133,7 +133,7 @@ impl Output<'_> {
         let span_error = SpanError {
             message,
             span,
-            lines: &self.lines,
+            lines: self.lines,
             style: console::Style::new().red(),
         };
         eprintln!(

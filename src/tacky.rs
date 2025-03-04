@@ -36,7 +36,7 @@ impl Function {
         crate::assembly::Function {
             name: self.name,
             instructions,
-            stack_offset: offset.abs() as u32,
+            stack_offset: offset.unsigned_abs().try_into().unwrap(),
         }
     }
 }

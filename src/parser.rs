@@ -184,7 +184,7 @@ impl Declaration {
         let Token::Identifier(name) = name_elem.token else {
             output.error(
                 name_elem.span,
-                format!("expected type to be followed by identifier in declaration"),
+                "expected type to be followed by identifier in declaration".to_string(),
             );
             return Err(ParseError::BadTokens);
         };
@@ -407,7 +407,7 @@ impl Expression {
             _ => {
                 output.error(
                     token_elem.span,
-                    format!("unexpected token found for expression"),
+                    "unexpected token found for expression".to_string(),
                 );
                 Err(ParseError::BadTokens)
             }
@@ -419,7 +419,7 @@ impl Expression {
             Self::Constant(c) => crate::tacky::Value::Constant(*c),
 
             Self::Var(Variable { name, .. }) => {
-                return crate::tacky::Value::Variable(crate::tacky::Variable(name.clone()));
+                crate::tacky::Value::Variable(crate::tacky::Variable(name.clone()))
             }
 
             Self::Unary(unary_op, expr) => {
@@ -536,7 +536,7 @@ impl Expression {
                     dst: var.clone(),
                 });
 
-                return crate::tacky::Value::Variable(var);
+                crate::tacky::Value::Variable(var)
             }
         }
     }
@@ -609,7 +609,7 @@ impl BinaryOperator {
             Token::Operator(Operator::GreaterThan) => Some(BinaryOperator::GreaterThan),
             Token::Operator(Operator::GreaterOrEqual) => Some(BinaryOperator::GreaterOrEqual),
 
-            _ => return None,
+            _ => None,
         }
     }
 
