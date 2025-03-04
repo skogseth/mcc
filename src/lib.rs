@@ -3,7 +3,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::{Context, anyhow};
 use clap::Args;
-use lexer::{CharElem, LexerError};
 use thiserror::Error;
 
 mod assembly;
@@ -12,7 +11,8 @@ mod parser;
 mod tacky;
 mod validate;
 
-use self::parser::ParseError;
+use crate::lexer::{CharElem, LexerError};
+use crate::parser::ParseError;
 
 #[derive(Debug, Clone, Args)]
 #[group(required = false, multiple = false)]
