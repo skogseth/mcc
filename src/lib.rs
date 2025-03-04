@@ -239,7 +239,7 @@ pub fn compiler(
 
     let assembly = tacky.assembly();
     if options.codegen {
-        println!("{assembly:#?}");
+        println!("{assembly}");
         return Ok(false);
     }
 
