@@ -217,17 +217,15 @@ impl std::fmt::Display for Token {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Keyword {
-    Int,
-    Void,
     Return,
+    Typedef,
 }
 
 impl std::fmt::Display for Keyword {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Int => f.write_str("int"),
-            Self::Void => f.write_str("void"),
             Self::Return => f.write_str("return"),
+            Self::Typedef => f.write_str("typedef"),
         }
     }
 }
@@ -236,9 +234,8 @@ impl FromStr for Keyword {
     type Err = ();
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "int" => Ok(Self::Int),
-            "void" => Ok(Self::Void),
             "return" => Ok(Self::Return),
+            "typedef" => Ok(Self::Typedef),
             _ => Err(()),
         }
     }

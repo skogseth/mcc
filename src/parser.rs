@@ -1,8 +1,9 @@
+use std::collections::HashMap;
 use std::iter::Peekable;
 use std::vec::IntoIter;
 
 use crate::lexer::{Keyword, Operator, Token, TokenElem};
-use crate::{Identifier, Output, Span};
+use crate::{Identifier, Output, Span, Type};
 
 pub fn parse(tokens: Vec<TokenElem>, output: &Output) -> Result<Program, ParseError> {
     let mut tokens = tokens.into_iter().peekable();
@@ -23,6 +24,7 @@ pub type TokenIter<'a> = Peekable<IntoIter<TokenElem>>;
 #[derive(Debug)]
 pub enum ParseError {
     BadTokens,
+    BadType,
     EarlyEnd(&'static str),
 }
 
@@ -37,15 +39,25 @@ impl Program {
 
 #[derive(Debug, Clone)]
 pub struct Function {
+    pub _type: Type,
     pub name: Identifier,
     pub body: Vec<BlockItem>,
 }
 
 impl Function {
-    fn parse(tokens: &mut TokenIter, output: &Output) -> Result<Self, ParseError> {
+    fn parse(
+        tokens: &mut TokenIter,
+        typedefs: HashMap<Identifier, Type>,
+        output: &Output,
+    ) -> Result<Self, ParseError> {
         let TokenElem { token, span } = tokens.next().ok_or(ParseError::EarlyEnd("return type"))?;
-        let Token::Keyword(Keyword::Int) = token else {
+        let Token::Identifier(maybe_type) = token else {
             output.error(span, format!("expected return type, found {token}"));
+            return Err(ParseError::BadTokens);
+        };
+
+        let Some(_type) = Type::try_from_identifier(&maybe_type, &typedefs) else {
+            output.error(span, format!("{maybe_type} is not a known type"));
             return Err(ParseError::BadTokens);
         };
 
@@ -68,13 +80,19 @@ impl Function {
             return Err(ParseError::BadTokens);
         };
 
-        assert!(matches!(
-            tokens.next(),
-            Some(TokenElem {
-                token: Token::Keyword(Keyword::Void),
-                ..
-            })
-        ));
+        let TokenElem { token, span } = tokens
+            .next()
+            .ok_or(ParseError::EarlyEnd("parameter type"))?;
+        let Token::Identifier(maybe_parameter_type) = token else {
+            output.error(span, format!("expected parameter type, found {token}"));
+            return Err(ParseError::BadTokens);
+        };
+        let Some(parameter_type) = Type::try_from_identifier(&maybe_parameter_type, &typedefs)
+        else {
+            output.error(span, format!("{maybe_type} is not a known type"));
+            return Err(ParseError::BadTokens);
+        };
+        assert_eq!(parameter_type, Type::Void);
 
         let TokenElem { token, span } = tokens
             .next()
@@ -117,7 +135,7 @@ impl Function {
         let TokenElem { token, .. } = tokens.next().expect("close brace");
         assert!(matches!(token, Token::CloseBrace));
 
-        Ok(Function { name, body })
+        Ok(Function { _type, name, body })
     }
 
     fn emit_tacky(self) -> crate::tacky::Function {

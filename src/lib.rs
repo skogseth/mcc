@@ -1,4 +1,6 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::{Context, anyhow};
@@ -59,6 +61,39 @@ impl Identifier {
 impl std::fmt::Display for Identifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Type {
+    Int,
+    Void,
+}
+
+impl Type {
+    #[rustfmt::skip]
+    pub fn try_from_identifier(identifier: &Identifier, typedefs: &HashMap<Identifier, Type>) -> Option<Self> {
+        Type::from_str(&identifier.0).ok().or_else(|| typedefs.get(identifier).copied())
+    }
+}
+
+impl std::fmt::Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Int => f.write_str("int"),
+            Self::Void => f.write_str("void"),
+        }
+    }
+}
+
+impl FromStr for Type {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "int" => Ok(Self::Int),
+            "void" => Ok(Self::Void),
+            _ => Err(()),
+        }
     }
 }
 
