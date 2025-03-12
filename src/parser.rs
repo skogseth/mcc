@@ -330,7 +330,29 @@ impl Statement {
                 let _ = expr.emit_tacky(instructions);
             }
             Self::Null => {} // nothing to do
-            Self::If { cond, then, else_ } => todo!(),
+            Self::If { cond, then, else_ } => {
+                let end_label = Identifier::new_label("end");
+                let else_label = Identifier::new_label("else");
+
+                let c = cond.emit_tacky(instructions);
+                instructions.push(crate::tacky::Instruction::JumpIfZero {
+                    condition: c,
+                    target: else_label.clone(),
+                });
+
+                let _ = then.emit_tacky(instructions);
+                instructions.push(crate::tacky::Instruction::Jump {
+                    target: end_label.clone(),
+                });
+
+                instructions.push(crate::tacky::Instruction::Label(else_label));
+
+                if let Some(expr) = else_ {
+                    expr.emit_tacky(instructions);
+                }
+
+                instructions.push(crate::tacky::Instruction::Label(end_label));
+            }
         }
     }
 }
@@ -575,7 +597,38 @@ impl Expression {
                 cond,
                 if_true,
                 if_false,
-            } => todo!(),
+            } => {
+                let return_var = crate::tacky::Variable(Identifier::new_temp());
+                let end_label = Identifier::new_label("end");
+                let expr2_label = Identifier::new_label("expr2");
+
+                let c = cond.emit_tacky(instructions);
+                instructions.push(crate::tacky::Instruction::JumpIfZero {
+                    condition: c,
+                    target: expr2_label.clone(),
+                });
+
+                let v1 = if_true.emit_tacky(instructions);
+                instructions.push(crate::tacky::Instruction::Copy {
+                    src: v1,
+                    dst: return_var.clone(),
+                });
+                instructions.push(crate::tacky::Instruction::Jump {
+                    target: end_label.clone(),
+                });
+
+                instructions.push(crate::tacky::Instruction::Label(expr2_label));
+
+                let v2 = if_false.emit_tacky(instructions);
+                instructions.push(crate::tacky::Instruction::Copy {
+                    src: v2,
+                    dst: return_var.clone(),
+                });
+
+                instructions.push(crate::tacky::Instruction::Label(end_label));
+
+                crate::tacky::Value::Variable(return_var)
+            }
         }
     }
 }
