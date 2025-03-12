@@ -984,4 +984,62 @@ mod tests {
             ),
         );
     }
+
+    #[test]
+    fn conditional() {
+        let expr = "int a = 0 ? 1 - 3 : 4 * (-1);";
+        let tokens: Vec<_> = crate::lexer::make_lexer(&[expr])
+            .collect::<Result<_, _>>()
+            .unwrap();
+
+        let just_tokens = tokens
+            .iter()
+            .map(|elem| elem.token.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            just_tokens,
+            [
+                Token::Keyword(Keyword::Int),
+                Token::Identifier(Identifier(String::from("a"))),
+                Token::Operator(Operator::Assignment),
+                Token::Constant(0),
+                Token::Operator(Operator::QuestionMark),
+                Token::Constant(1),
+                Token::Operator(Operator::Minus),
+                Token::Constant(3),
+                Token::Operator(Operator::Colon),
+                Token::Constant(4),
+                Token::Operator(Operator::Asterisk),
+                Token::Punct(Punct::OpenParenthesis),
+                Token::Operator(Operator::Minus),
+                Token::Constant(1),
+                Token::Punct(Punct::CloseParenthesis),
+                Token::Punct(Punct::Semicolon),
+            ]
+        );
+
+        let mut tokens = tokens.into_iter().peekable();
+        let parsed = Declaration::parse(&mut tokens, &DUMMY_OUTPUT).unwrap();
+
+        assert_eq!(parsed.name, Identifier(String::from("a")));
+        assert_eq!(
+            parsed.init,
+            Some(Expression::Conditional {
+                cond: Box::new(Expression::Constant(0)),
+                if_true: Box::new(Expression::Binary(
+                    BinaryOperator::Subtract,
+                    Box::new(Expression::Constant(1)),
+                    Box::new(Expression::Constant(3)),
+                )),
+                if_false: Box::new(Expression::Binary(
+                    BinaryOperator::Multiply,
+                    Box::new(Expression::Constant(4)),
+                    Box::new(Expression::Unary(
+                        UnaryOperator::Negate,
+                        Box::new(Expression::Constant(1))
+                    )),
+                )),
+            })
+        );
+    }
 }
