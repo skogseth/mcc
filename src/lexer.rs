@@ -148,6 +148,9 @@ impl<I: Iterator<Item = CharElem>> Iterator for Lexer<I> {
                     None => Token::Operator(Operator::GreaterThan).with_span(Span::single(c)),
                 },
 
+                '?' => Token::Operator(Operator::QuestionMark).with_span(Span::single(c)),
+                ':' => Token::Operator(Operator::Colon).with_span(Span::single(c)),
+
                 _ => {
                     return Some(Err(LexerError {
                         message: "not a valid token",
@@ -220,6 +223,8 @@ pub enum Keyword {
     Int,
     Void,
     Return,
+    If,
+    Else,
 }
 
 impl std::fmt::Display for Keyword {
@@ -228,6 +233,8 @@ impl std::fmt::Display for Keyword {
             Self::Int => f.write_str("int"),
             Self::Void => f.write_str("void"),
             Self::Return => f.write_str("return"),
+            Self::If => f.write_str("if"),
+            Self::Else => f.write_str("else"),
         }
     }
 }
@@ -239,6 +246,8 @@ impl FromStr for Keyword {
             "int" => Ok(Self::Int),
             "void" => Ok(Self::Void),
             "return" => Ok(Self::Return),
+            "if" => Ok(Self::If),
+            "else" => Ok(Self::Else),
             _ => Err(()),
         }
     }
@@ -269,6 +278,9 @@ pub enum Operator {
     GreaterThan,    // >
     LessOrEqual,    // <=
     GreaterOrEqual, // <=
+
+    QuestionMark, // ?
+    Colon,        // :
 }
 
 impl std::fmt::Display for Operator {
@@ -296,6 +308,9 @@ impl std::fmt::Display for Operator {
             Self::GreaterThan => f.write_str(">"),
             Self::LessOrEqual => f.write_str("<="),
             Self::GreaterOrEqual => f.write_str("<="),
+
+            Self::QuestionMark => f.write_str("?"),
+            Self::Colon => f.write_str(":"),
         }
     }
 }
