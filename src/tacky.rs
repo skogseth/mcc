@@ -203,7 +203,9 @@ impl Instruction {
                     BinaryOperator::LessOrEqual => relational_op!(crate::assembly::CondCode::LE),
                     BinaryOperator::GreaterOrEqual => relational_op!(crate::assembly::CondCode::GE),
 
-                    BinaryOperator::Assignment => todo!(),
+                    BinaryOperator::Assignment | BinaryOperator::QuestionMark => {
+                        panic!("invalid binary operator for assembly");
+                    }
                 }
             }
 

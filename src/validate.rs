@@ -66,6 +66,7 @@ fn resolve_statement(
     match statement {
         p::Statement::Return(expr) => resolve_expression(expr, variable_map, output),
         p::Statement::Expression(expr) => resolve_expression(expr, variable_map, output),
+        p::Statement::If { cond, then, else_ } => todo!(),
         p::Statement::Null => Ok(()), // nothing to do
     }
 }
@@ -107,5 +108,11 @@ fn resolve_expression(
         }
 
         p::Expression::Constant(_) => Ok(()), // nothing to do
+
+        p::Expression::Conditional {
+            cond,
+            if_true,
+            if_false,
+        } => todo!(),
     }
 }
