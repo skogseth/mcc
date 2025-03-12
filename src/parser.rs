@@ -1,7 +1,7 @@
 use std::iter::Peekable;
 use std::vec::IntoIter;
 
-use crate::lexer::{Keyword, Operator, Token, TokenElem};
+use crate::lexer::{Keyword, Operator, Punct, Token, TokenElem};
 use crate::{Identifier, Output, Span};
 
 pub fn parse(tokens: Vec<TokenElem>, output: &Output) -> Result<Program, ParseError> {
@@ -24,6 +24,38 @@ pub type TokenIter<'a> = Peekable<IntoIter<TokenElem>>;
 pub enum ParseError {
     BadTokens,
     EarlyEnd(&'static str),
+}
+
+fn take_punct(tokens: &mut TokenIter, expected: Punct, output: &Output) -> Result<(), ParseError> {
+    let elem = tokens
+        .next()
+        .ok_or(ParseError::EarlyEnd("close-parenthesis"))?;
+
+    match elem.token {
+        Token::Punct(p) if p == expected => Ok(()),
+        _ => {
+            output.error(elem.span, format!("expected {expected}"));
+            Err(ParseError::BadTokens)
+        }
+    }
+}
+
+fn take_operator(
+    tokens: &mut TokenIter,
+    expected: Operator,
+    output: &Output,
+) -> Result<(), ParseError> {
+    let elem = tokens
+        .next()
+        .ok_or(ParseError::EarlyEnd("close-parenthesis"))?;
+
+    match elem.token {
+        Token::Operator(o) if o == expected => Ok(()),
+        _ => {
+            output.error(elem.span, format!("expected {expected}"));
+            Err(ParseError::BadTokens)
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -57,16 +89,7 @@ impl Function {
             return Err(ParseError::BadTokens);
         };
 
-        let TokenElem { token, span } = tokens
-            .next()
-            .ok_or(ParseError::EarlyEnd("open-parenthesis"))?;
-        let Token::OpenParenthesis = token else {
-            output.error(
-                span,
-                format!("expected open-parenthesis for function {name}, found {token}"),
-            );
-            return Err(ParseError::BadTokens);
-        };
+        take_punct(tokens, Punct::OpenParenthesis, output)?;
 
         assert!(matches!(
             tokens.next(),
@@ -76,32 +99,15 @@ impl Function {
             })
         ));
 
-        let TokenElem { token, span } = tokens
-            .next()
-            .ok_or(ParseError::EarlyEnd("close-parenthesis"))?;
-        let Token::CloseParenthesis = token else {
-            output.error(
-                span,
-                format!("expected close-parenthesis for function {name}, found {token}"),
-            );
-            return Err(ParseError::BadTokens);
-        };
-
-        let TokenElem { token, span } = tokens.next().ok_or(ParseError::EarlyEnd("open brace"))?;
-        let Token::OpenBrace = token else {
-            output.error(
-                span,
-                format!("expected open brace for function {name}, found {token}"),
-            );
-            return Err(ParseError::BadTokens);
-        };
+        take_punct(tokens, Punct::CloseParenthesis, output)?;
+        take_punct(tokens, Punct::OpenBrace, output)?;
 
         let mut body = Vec::new();
         let mut encountered_bad_tokens = false;
         loop {
             let token_elem = tokens.peek().ok_or(ParseError::EarlyEnd("close brace"))?;
             match token_elem.token {
-                Token::CloseBrace => break,
+                Token::Punct(Punct::CloseBrace) => break,
                 _ => match BlockItem::parse(tokens, output) {
                     Ok(block_item) => body.push(block_item),
                     Err(ParseError::BadTokens) => encountered_bad_tokens = true,
@@ -114,8 +120,7 @@ impl Function {
             return Err(ParseError::BadTokens);
         }
 
-        let TokenElem { token, .. } = tokens.next().expect("close brace");
-        assert!(matches!(token, Token::CloseBrace));
+        take_punct(tokens, Punct::CloseBrace, output)?;
 
         Ok(Function { name, body })
     }
@@ -194,8 +199,12 @@ impl Declaration {
                 .next()
                 .ok_or(ParseError::EarlyEnd("either assignment or semicolon"))?;
             match token_elem.token {
-                Token::Operator(Operator::Assignment) => Some(take_expr(tokens, output)?),
-                Token::Semicolon => None,
+                Token::Operator(Operator::Assignment) => {
+                    let expr = take_expr(tokens, output)?;
+                    take_punct(tokens, Punct::Semicolon, output)?;
+                    Some(expr)
+                }
+                Token::Punct(Punct::Semicolon) => None,
                 _ => {
                     output.error(
                         token_elem.span,
@@ -229,28 +238,27 @@ impl Declaration {
 pub enum Statement {
     Return(Expression),
     Expression(Expression),
+    If {
+        cond: Expression,
+        then: Box<Statement>,
+        else_: Option<Box<Statement>>,
+    },
     Null,
 }
 
 fn take_expr(tokens: &mut TokenIter, output: &Output) -> Result<Expression, ParseError> {
     match Expression::parse(tokens, output) {
-        Ok(expr) => {
-            let next = tokens.next().ok_or(ParseError::EarlyEnd("statement"))?;
-            match next.token {
-                Token::Semicolon => return Ok(expr),
-                _ => output.error(next.span, String::from("expected semicolon")),
-            }
-        }
+        Ok(expr) => return Ok(expr),
         Err(ParseError::BadTokens) => {}
         Err(e @ ParseError::EarlyEnd(_)) => return Err(e),
-    };
+    }
 
     // We know keep taking tokens until we find a semicolon
     let mut span = None;
     loop {
         let elem = tokens.next().ok_or(ParseError::EarlyEnd("statement"))?;
 
-        if matches!(elem.token, Token::Semicolon) {
+        if matches!(elem.token, Token::Punct(Punct::Semicolon)) {
             if let Some(current_span) = span {
                 output.warning(current_span, String::from("not parsed"));
             }
@@ -276,16 +284,36 @@ impl Statement {
             Token::Keyword(Keyword::Return) => {
                 let _ = tokens.next().expect("token must be return keyword");
                 let expr = take_expr(tokens, output)?;
+                take_punct(tokens, Punct::Semicolon, output)?;
                 Ok(Self::Return(expr))
             }
 
-            Token::Semicolon => {
+            Token::Punct(Punct::Semicolon) => {
                 let _ = tokens.next().expect("token must be semicolon");
                 Ok(Self::Null)
             }
 
+            Token::Keyword(Keyword::If) => {
+                let _ = tokens.next().expect("token must be return keyword");
+
+                take_punct(tokens, Punct::OpenParenthesis, output)?;
+                let cond = take_expr(tokens, output)?;
+                take_punct(tokens, Punct::CloseParenthesis, output)?;
+
+                let then = Box::new(Statement::parse(tokens, output)?);
+
+                let else_ = tokens
+                    .next_if(|t| matches!(t.token, Token::Keyword(Keyword::Else)))
+                    .map(|_t| Statement::parse(tokens, output))
+                    .transpose()?
+                    .map(Box::new);
+
+                Ok(Self::If { cond, then, else_ })
+            }
+
             _ => {
                 let expr = take_expr(tokens, output)?;
+                take_punct(tokens, Punct::Semicolon, output)?;
                 Ok(Self::Expression(expr))
             }
         }
@@ -302,6 +330,29 @@ impl Statement {
                 let _ = expr.emit_tacky(instructions);
             }
             Self::Null => {} // nothing to do
+            Self::If { cond, then, else_ } => {
+                let end_label = Identifier::new_label("end");
+                let else_label = Identifier::new_label("else");
+
+                let c = cond.emit_tacky(instructions);
+                instructions.push(crate::tacky::Instruction::JumpIfZero {
+                    condition: c,
+                    target: else_label.clone(),
+                });
+
+                let _ = then.emit_tacky(instructions);
+                instructions.push(crate::tacky::Instruction::Jump {
+                    target: end_label.clone(),
+                });
+
+                instructions.push(crate::tacky::Instruction::Label(else_label));
+
+                if let Some(expr) = else_ {
+                    expr.emit_tacky(instructions);
+                }
+
+                instructions.push(crate::tacky::Instruction::Label(end_label));
+            }
         }
     }
 }
@@ -319,6 +370,11 @@ pub enum Expression {
     Unary(UnaryOperator, Box<Expression>),
     Binary(BinaryOperator, Box<Expression>, Box<Expression>),
     Assignment(Box<Expression>, Box<Expression>),
+    Conditional {
+        cond: Box<Expression>,
+        if_true: Box<Expression>,
+        if_false: Box<Expression>,
+    },
 }
 
 impl Expression {
@@ -348,6 +404,16 @@ impl Expression {
                 BinaryOperator::Assignment => {
                     let right = Self::parse_expr(tokens, precedence, output)?;
                     left = Expression::Assignment(Box::new(left), Box::new(right));
+                }
+                BinaryOperator::QuestionMark => {
+                    let middle = Self::parse_expr(tokens, 0, output)?;
+                    take_operator(tokens, Operator::Colon, output)?;
+                    let right = Self::parse_expr(tokens, precedence, output)?;
+                    left = Self::Conditional {
+                        cond: Box::new(left),
+                        if_true: Box::new(middle),
+                        if_false: Box::new(right),
+                    };
                 }
                 _ => {
                     let right = Self::parse_expr(tokens, precedence + 1, output)?;
@@ -386,22 +452,10 @@ impl Expression {
                 Box::new(Self::parse_factor(tokens, output)?),
             )),
 
-            Token::OpenParenthesis => {
+            Token::Punct(Punct::OpenParenthesis) => {
                 let expr = Self::parse_expr(tokens, 0, output)?;
-
-                let next_token = tokens
-                    .next()
-                    .ok_or(ParseError::EarlyEnd("close parenthesis"))?;
-                match next_token.token {
-                    Token::CloseParenthesis => Ok(expr),
-                    t => {
-                        output.error(
-                            next_token.span,
-                            format!("expected close parenthesis, found {t}"),
-                        );
-                        Err(ParseError::BadTokens)
-                    }
-                }
+                take_punct(tokens, Punct::CloseParenthesis, output)?;
+                Ok(expr)
             }
 
             _ => {
@@ -538,6 +592,43 @@ impl Expression {
 
                 crate::tacky::Value::Variable(var)
             }
+
+            Self::Conditional {
+                cond,
+                if_true,
+                if_false,
+            } => {
+                let return_var = crate::tacky::Variable(Identifier::new_temp());
+                let end_label = Identifier::new_label("end");
+                let expr2_label = Identifier::new_label("expr2");
+
+                let c = cond.emit_tacky(instructions);
+                instructions.push(crate::tacky::Instruction::JumpIfZero {
+                    condition: c,
+                    target: expr2_label.clone(),
+                });
+
+                let v1 = if_true.emit_tacky(instructions);
+                instructions.push(crate::tacky::Instruction::Copy {
+                    src: v1,
+                    dst: return_var.clone(),
+                });
+                instructions.push(crate::tacky::Instruction::Jump {
+                    target: end_label.clone(),
+                });
+
+                instructions.push(crate::tacky::Instruction::Label(expr2_label));
+
+                let v2 = if_false.emit_tacky(instructions);
+                instructions.push(crate::tacky::Instruction::Copy {
+                    src: v2,
+                    dst: return_var.clone(),
+                });
+
+                instructions.push(crate::tacky::Instruction::Label(end_label));
+
+                crate::tacky::Value::Variable(return_var)
+            }
         }
     }
 }
@@ -582,6 +673,9 @@ pub enum BinaryOperator {
     LessOrEqual,
     GreaterThan,
     GreaterOrEqual,
+
+    // Conditional
+    QuestionMark,
 }
 
 impl BinaryOperator {
@@ -609,6 +703,9 @@ impl BinaryOperator {
             Token::Operator(Operator::GreaterThan) => Some(BinaryOperator::GreaterThan),
             Token::Operator(Operator::GreaterOrEqual) => Some(BinaryOperator::GreaterOrEqual),
 
+            // Conditional
+            Token::Operator(Operator::QuestionMark) => Some(BinaryOperator::QuestionMark),
+
             _ => None,
         }
     }
@@ -621,6 +718,7 @@ impl BinaryOperator {
             Self::Equal | Self::NotEqual => 30,
             Self::And => 10,
             Self::Or => 5,
+            Self::QuestionMark => 3,
             Self::Assignment => 1,
         }
     }
@@ -643,6 +741,7 @@ impl std::fmt::Display for BinaryOperator {
             Self::LessOrEqual => f.write_str("<="),
             Self::GreaterThan => f.write_str(">"),
             Self::GreaterOrEqual => f.write_str(">="),
+            Self::QuestionMark => f.write_str("?"),
         }
     }
 }
@@ -801,11 +900,11 @@ mod tests {
             [
                 Token::Constant(10),
                 Token::Operator(Operator::Plus),
-                Token::OpenParenthesis,
+                Token::Punct(Punct::OpenParenthesis),
                 Token::Constant(8),
                 Token::Operator(Operator::Minus),
                 Token::Constant(4),
-                Token::CloseParenthesis,
+                Token::Punct(Punct::CloseParenthesis),
                 Token::Operator(Operator::Asterisk),
                 Token::Constant(3),
             ]
@@ -849,16 +948,16 @@ mod tests {
             [
                 Token::Constant(10),
                 Token::Operator(Operator::Plus),
-                Token::OpenParenthesis,
+                Token::Punct(Punct::OpenParenthesis),
                 Token::Constant(8),
                 Token::Operator(Operator::Minus),
                 Token::Constant(4),
-                Token::CloseParenthesis,
+                Token::Punct(Punct::CloseParenthesis),
                 Token::Operator(Operator::Asterisk),
-                Token::OpenParenthesis,
+                Token::Punct(Punct::OpenParenthesis),
                 Token::Operator(Operator::Minus),
                 Token::Constant(3),
-                Token::CloseParenthesis,
+                Token::Punct(Punct::CloseParenthesis),
             ]
         );
 

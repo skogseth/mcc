@@ -84,11 +84,11 @@ impl<I: Iterator<Item = CharElem>> Iterator for Lexer<I> {
             Some(Ok(TokenElem { token, span }))
         } else {
             let token_elem: TokenElem = match c.char {
-                '(' => Token::OpenParenthesis.with_span(Span::single(c)),
-                ')' => Token::CloseParenthesis.with_span(Span::single(c)),
-                '{' => Token::OpenBrace.with_span(Span::single(c)),
-                '}' => Token::CloseBrace.with_span(Span::single(c)),
-                ';' => Token::Semicolon.with_span(Span::single(c)),
+                '(' => Token::Punct(Punct::OpenParenthesis).with_span(Span::single(c)),
+                ')' => Token::Punct(Punct::CloseParenthesis).with_span(Span::single(c)),
+                '{' => Token::Punct(Punct::OpenBrace).with_span(Span::single(c)),
+                '}' => Token::Punct(Punct::CloseBrace).with_span(Span::single(c)),
+                ';' => Token::Punct(Punct::Semicolon).with_span(Span::single(c)),
 
                 // This can be either plus ('+') or increment ('++')
                 '+' => match self.0.next_if(|c| c.char == '+') {
@@ -148,6 +148,9 @@ impl<I: Iterator<Item = CharElem>> Iterator for Lexer<I> {
                     None => Token::Operator(Operator::GreaterThan).with_span(Span::single(c)),
                 },
 
+                '?' => Token::Operator(Operator::QuestionMark).with_span(Span::single(c)),
+                ':' => Token::Operator(Operator::Colon).with_span(Span::single(c)),
+
                 _ => {
                     return Some(Err(LexerError {
                         message: "not a valid token",
@@ -184,13 +187,9 @@ pub struct LexerError {
 pub enum Token {
     Identifier(Identifier),
     Constant(i64), // TODO: Maybe a custom constant type?
+    Punct(Punct),
     Keyword(Keyword),
     Operator(Operator),
-    OpenParenthesis,
-    CloseParenthesis,
-    OpenBrace,
-    CloseBrace,
-    Semicolon,
 }
 
 impl Token {
@@ -206,6 +205,23 @@ impl std::fmt::Display for Token {
             Self::Constant(i) => write!(f, "constant with value `{i}`"),
             Self::Keyword(keyword) => write!(f, "keyword `{keyword}`"),
             Self::Operator(op) => write!(f, "`{op}` (operator)"),
+            Self::Punct(p) => write!(f, "{p}"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Punct {
+    OpenParenthesis,
+    CloseParenthesis,
+    OpenBrace,
+    CloseBrace,
+    Semicolon,
+}
+
+impl std::fmt::Display for Punct {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
             Self::OpenParenthesis => f.write_str("`(`"),
             Self::CloseParenthesis => f.write_str("`)`"),
             Self::OpenBrace => f.write_str("`{`"),
@@ -220,6 +236,8 @@ pub enum Keyword {
     Int,
     Void,
     Return,
+    If,
+    Else,
 }
 
 impl std::fmt::Display for Keyword {
@@ -228,6 +246,8 @@ impl std::fmt::Display for Keyword {
             Self::Int => f.write_str("int"),
             Self::Void => f.write_str("void"),
             Self::Return => f.write_str("return"),
+            Self::If => f.write_str("if"),
+            Self::Else => f.write_str("else"),
         }
     }
 }
@@ -239,6 +259,8 @@ impl FromStr for Keyword {
             "int" => Ok(Self::Int),
             "void" => Ok(Self::Void),
             "return" => Ok(Self::Return),
+            "if" => Ok(Self::If),
+            "else" => Ok(Self::Else),
             _ => Err(()),
         }
     }
@@ -269,6 +291,9 @@ pub enum Operator {
     GreaterThan,    // >
     LessOrEqual,    // <=
     GreaterOrEqual, // <=
+
+    QuestionMark, // ?
+    Colon,        // :
 }
 
 impl std::fmt::Display for Operator {
@@ -296,6 +321,9 @@ impl std::fmt::Display for Operator {
             Self::GreaterThan => f.write_str(">"),
             Self::LessOrEqual => f.write_str("<="),
             Self::GreaterOrEqual => f.write_str("<="),
+
+            Self::QuestionMark => f.write_str("?"),
+            Self::Colon => f.write_str(":"),
         }
     }
 }
@@ -313,10 +341,10 @@ mod tests {
             Token::Keyword(Keyword::Return),
             Token::Identifier(Identifier::new("var_1")),
             Token::Operator(Operator::Asterisk),
-            Token::OpenParenthesis,
+            Token::Punct(Punct::OpenParenthesis),
             Token::Operator(Operator::Minus),
             Token::Constant(490),
-            Token::CloseParenthesis,
+            Token::Punct(Punct::CloseParenthesis),
         ];
 
         assert_eq!(tokens, expected);
