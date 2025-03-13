@@ -16,6 +16,7 @@ pub fn main(program: &mut p::Program, output: &Output) -> Result<(), ValidationE
     let main: &mut p::Function = &mut program.0;
     let errors = main
         .body
+        .0
         .iter_mut()
         .map(|block_item| match block_item {
             p::BlockItem::D(d) => resolve_decleration(d, &mut vars, output),
@@ -76,6 +77,7 @@ fn resolve_statement(
 
             Ok(())
         }
+        p::Statement::Compound { .. } => todo!(),
         p::Statement::Null => Ok(()), // nothing to do
     }
 }
