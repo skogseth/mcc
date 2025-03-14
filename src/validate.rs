@@ -1,25 +1,76 @@
-use std::collections::HashMap;
-
 use crate::Identifier;
 use crate::Output;
 use crate::parser as p;
 
-/// A map containing unique names for each identifier
-type VariableMap = HashMap<Identifier, Identifier>;
+use variable_map::VariableMap;
+mod variable_map {
+    use std::collections::HashMap;
+
+    use super::Identifier;
+
+    /// A map containing unique names for each identifier
+    pub struct VariableMap<'a> {
+        current: HashMap<Identifier, Identifier>,
+        inner: Option<&'a VariableMap<'a>>,
+    }
+
+    impl VariableMap<'_> {
+        pub fn new() -> Self {
+            Self {
+                current: HashMap::new(),
+                inner: None,
+            }
+        }
+
+        pub fn is_defined_here(&self, key: &Identifier) -> bool {
+            self.current.contains_key(key)
+        }
+
+        pub fn add(&mut self, key: Identifier, value: Identifier) {
+            self.current.insert(key, value);
+        }
+
+        pub fn get(&self, key: &Identifier) -> Option<Identifier> {
+            match self.current.get(key) {
+                Some(value) => Some(value.clone()),
+                None => match self.inner {
+                    Some(inner) => inner.get(key).clone(),
+                    None => None,
+                },
+            }
+        }
+    }
+
+    impl<'a> VariableMap<'a> {
+        pub fn wrap(&'a self) -> Self {
+            Self {
+                current: HashMap::new(),
+                inner: Some(&self),
+            }
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct ValidationError;
 
 pub fn main(program: &mut p::Program, output: &Output) -> Result<(), ValidationError> {
-    let mut vars: VariableMap = HashMap::new();
-
+    let mut vars = VariableMap::new();
     let main: &mut p::Function = &mut program.0;
-    let errors = main
-        .body
+    resolve_block(&mut main.body, &mut vars, output)
+}
+
+fn resolve_block(
+    block: &mut p::Block,
+    variable_map: &mut VariableMap,
+    output: &Output,
+) -> Result<(), ValidationError> {
+    let errors = block
+        .0
         .iter_mut()
         .map(|block_item| match block_item {
-            p::BlockItem::D(d) => resolve_decleration(d, &mut vars, output),
-            p::BlockItem::S(s) => resolve_statement(s, &mut vars, output),
+            p::BlockItem::D(d) => resolve_decleration(d, variable_map, output),
+            p::BlockItem::S(s) => resolve_statement(s, variable_map, output),
         })
         .filter_map(Result::err)
         .collect::<Vec<ValidationError>>();
@@ -36,7 +87,7 @@ fn resolve_decleration(
     variable_map: &mut VariableMap,
     output: &Output,
 ) -> Result<(), ValidationError> {
-    if variable_map.contains_key(&decleration.name) {
+    if variable_map.is_defined_here(&decleration.name) {
         output.error(
             decleration.name_span,
             String::from("duplicate variable decleration"),
@@ -49,7 +100,7 @@ fn resolve_decleration(
     // Retrieve the original name and replace it with the new unique name.
     let original_name = std::mem::replace(&mut decleration.name, unique_name.clone());
 
-    variable_map.insert(original_name, unique_name);
+    variable_map.add(original_name, unique_name);
 
     if let Some(init) = &mut decleration.init {
         resolve_expression(init, variable_map, output)?;
@@ -76,6 +127,11 @@ fn resolve_statement(
 
             Ok(())
         }
+        p::Statement::Compound(block) => {
+            // Create new map wrapping the current one
+            let mut variable_map = variable_map.wrap();
+            resolve_block(block, &mut variable_map, output)
+        }
         p::Statement::Null => Ok(()), // nothing to do
     }
 }
@@ -100,7 +156,7 @@ fn resolve_expression(
         }
 
         p::Expression::Var(variable) => {
-            let unique_name = variable_map.get(&variable.name).cloned().ok_or_else(|| {
+            let unique_name = variable_map.get(&variable.name).ok_or_else(|| {
                 output.error(variable.span, String::from("undeclared variable"));
                 ValidationError
             })?;

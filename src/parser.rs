@@ -70,7 +70,7 @@ impl Program {
 #[derive(Debug, Clone)]
 pub struct Function {
     pub name: Identifier,
-    pub body: Vec<BlockItem>,
+    pub body: Block,
 }
 
 impl Function {
@@ -100,36 +100,15 @@ impl Function {
         ));
 
         take_punct(tokens, Punct::CloseParenthesis, output)?;
-        take_punct(tokens, Punct::OpenBrace, output)?;
 
-        let mut body = Vec::new();
-        let mut encountered_bad_tokens = false;
-        loop {
-            let token_elem = tokens.peek().ok_or(ParseError::EarlyEnd("close brace"))?;
-            match token_elem.token {
-                Token::Punct(Punct::CloseBrace) => break,
-                _ => match BlockItem::parse(tokens, output) {
-                    Ok(block_item) => body.push(block_item),
-                    Err(ParseError::BadTokens) => encountered_bad_tokens = true,
-                    Err(e @ ParseError::EarlyEnd(_)) => return Err(e),
-                },
-            }
-        }
-
-        if encountered_bad_tokens {
-            return Err(ParseError::BadTokens);
-        }
-
-        take_punct(tokens, Punct::CloseBrace, output)?;
+        let body = Block::parse(tokens, output)?;
 
         Ok(Function { name, body })
     }
 
     fn emit_tacky(self) -> crate::tacky::Function {
         let mut instructions = Vec::new();
-        for block_item in self.body {
-            block_item.emit_tacky(&mut instructions);
-        }
+        self.body.emit_tacky(&mut instructions);
 
         // Sometimes C is a very strange language...
         // A function is allowed to not return a value
@@ -145,6 +124,43 @@ impl Function {
         crate::tacky::Function {
             name: self.name,
             body: instructions,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Block(pub Vec<BlockItem>);
+
+impl Block {
+    fn parse(tokens: &mut TokenIter, output: &Output) -> Result<Self, ParseError> {
+        take_punct(tokens, Punct::OpenBrace, output)?;
+
+        let mut block_items = Vec::new();
+        let mut encountered_bad_tokens = false;
+        loop {
+            let token_elem = tokens.peek().ok_or(ParseError::EarlyEnd("close brace"))?;
+            match token_elem.token {
+                Token::Punct(Punct::CloseBrace) => break,
+                _ => match BlockItem::parse(tokens, output) {
+                    Ok(block_item) => block_items.push(block_item),
+                    Err(ParseError::BadTokens) => encountered_bad_tokens = true,
+                    Err(e @ ParseError::EarlyEnd(_)) => return Err(e),
+                },
+            }
+        }
+
+        if encountered_bad_tokens {
+            return Err(ParseError::BadTokens);
+        }
+
+        take_punct(tokens, Punct::CloseBrace, output)?;
+
+        Ok(Self(block_items))
+    }
+
+    fn emit_tacky(self, instructions: &mut Vec<crate::tacky::Instruction>) {
+        for block_item in self.0 {
+            block_item.emit_tacky(instructions);
         }
     }
 }
@@ -243,6 +259,7 @@ pub enum Statement {
         then: Box<Statement>,
         else_: Option<Box<Statement>>,
     },
+    Compound(Block),
     Null,
 }
 
@@ -311,6 +328,11 @@ impl Statement {
                 Ok(Self::If { cond, then, else_ })
             }
 
+            Token::Punct(Punct::OpenBrace) => {
+                let block = Block::parse(tokens, output)?;
+                Ok(Self::Compound(block))
+            }
+
             _ => {
                 let expr = take_expr(tokens, output)?;
                 take_punct(tokens, Punct::Semicolon, output)?;
@@ -352,6 +374,11 @@ impl Statement {
                 }
 
                 instructions.push(crate::tacky::Instruction::Label(end_label));
+            }
+            Self::Compound(block) => {
+                for block_item in block.0 {
+                    block_item.emit_tacky(instructions);
+                }
             }
         }
     }
