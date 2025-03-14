@@ -375,7 +375,11 @@ impl Statement {
 
                 instructions.push(crate::tacky::Instruction::Label(end_label));
             }
-            _ => todo!(),
+            Self::Compound(block) => {
+                for block_item in block.0 {
+                    block_item.emit_tacky(instructions);
+                }
+            }
         }
     }
 }
