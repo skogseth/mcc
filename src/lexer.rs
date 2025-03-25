@@ -238,6 +238,11 @@ pub enum Keyword {
     Return,
     If,
     Else,
+    Do,
+    While,
+    For,
+    Break,
+    Continue,
 }
 
 impl std::fmt::Display for Keyword {
@@ -248,6 +253,11 @@ impl std::fmt::Display for Keyword {
             Self::Return => f.write_str("return"),
             Self::If => f.write_str("if"),
             Self::Else => f.write_str("else"),
+            Self::Do => f.write_str("do"),
+            Self::While => f.write_str("while"),
+            Self::For => f.write_str("for"),
+            Self::Break => f.write_str("break"),
+            Self::Continue => f.write_str("continue"),
         }
     }
 }
@@ -261,6 +271,11 @@ impl FromStr for Keyword {
             "return" => Ok(Self::Return),
             "if" => Ok(Self::If),
             "else" => Ok(Self::Else),
+            "do" => Ok(Self::Do),
+            "while" => Ok(Self::While),
+            "for" => Ok(Self::For),
+            "break" => Ok(Self::Break),
+            "continue" => Ok(Self::Continue),
             _ => Err(()),
         }
     }
