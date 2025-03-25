@@ -251,6 +251,31 @@ impl Declaration {
 }
 
 #[derive(Debug, Clone)]
+enum ForInit {
+    D(Declaration),
+    E(Option<Expression>),
+}
+
+impl ForInit {
+    fn parse(tokens: &mut TokenIter, output: &Output) -> Result<Self, ParseError> {
+        let token_elem = tokens.peek().ok_or(ParseError::EarlyEnd("block item"))?;
+
+        match token_elem.token {
+            Token::Keyword(Keyword::Int) => Declaration::parse(tokens, output).map(ForInit::D),
+            Token::Punct(Punct::Semicolon) => {
+                let _ = tokens.next().expect("token must be semicolon");
+                Ok(Self::E(None))
+            }
+            _ => {
+                let expr = take_expr(tokens, output)?;
+                take_punct(tokens, Punct::Semicolon, output)?;
+                Ok(Self::E(Some(expr)))
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum Statement {
     Return(Expression),
     Expression(Expression),
@@ -260,6 +285,22 @@ pub enum Statement {
         else_: Option<Box<Statement>>,
     },
     Compound(Block),
+    Break,
+    Continue,
+    While {
+        cond: Expression,
+        body: Box<Statement>,
+    },
+    DoWhile {
+        body: Box<Statement>,
+        cond: Expression,
+    },
+    For {
+        init: ForInit,
+        cond: Option<Expression>,
+        post: Option<Expression>,
+        body: Box<Statement>,
+    },
     Null,
 }
 
@@ -303,6 +344,83 @@ impl Statement {
                 let expr = take_expr(tokens, output)?;
                 take_punct(tokens, Punct::Semicolon, output)?;
                 Ok(Self::Return(expr))
+            }
+
+            Token::Keyword(Keyword::Break) => {
+                let _ = tokens.next().expect("token must be break keyword");
+                take_punct(tokens, Punct::Semicolon, output)?;
+                Ok(Self::Break)
+            }
+
+            Token::Keyword(Keyword::Continue) => {
+                let _ = tokens.next().expect("token must be continue keyword");
+                take_punct(tokens, Punct::Semicolon, output)?;
+                Ok(Self::Continue)
+            }
+
+            Token::Keyword(Keyword::While) => {
+                let _ = tokens.next().expect("token must be while keyword");
+
+                take_punct(tokens, Punct::OpenParenthesis, output)?;
+                let cond = take_expr(tokens, output)?;
+                take_punct(tokens, Punct::CloseParenthesis, output)?;
+
+                let body = Box::new(Statement::parse(tokens, output)?);
+
+                Ok(Self::While { cond, body })
+            }
+
+            Token::Keyword(Keyword::Do) => {
+                let _ = tokens.next().expect("token must be do keyword");
+
+                let body = Box::new(Statement::parse(tokens, output)?);
+
+                let elem = tokens.next().expect("token must be while keyword");
+                if !matches!(elem.token, Token::Keyword(Keyword::While)) {
+                    output.error(elem.span, String::from("expected `while`"));
+                    return Err(ParseError::BadTokens);
+                }
+
+                take_punct(tokens, Punct::OpenParenthesis, output)?;
+                let cond = take_expr(tokens, output)?;
+                take_punct(tokens, Punct::CloseParenthesis, output)?;
+
+                take_punct(tokens, Punct::Semicolon, output)?;
+
+                Ok(Self::DoWhile { body, cond })
+            }
+
+            Token::Keyword(Keyword::For) => {
+                let _ = tokens.next().expect("token must be for keyword");
+
+                take_punct(tokens, Punct::OpenParenthesis, output)?;
+
+                let init = ForInit::parse(tokens, output)?;
+
+                let peeked = tokens.peek().ok_or(ParseError::EarlyEnd("condition"))?;
+                let cond = match peeked.token {
+                    Token::Punct(Punct::Semicolon) => None,
+                    _ => Some(take_expr(tokens, output)?),
+                };
+
+                take_punct(tokens, Punct::Semicolon, output)?;
+
+                let peeked = tokens.peek().ok_or(ParseError::EarlyEnd("post expr"))?;
+                let post = match peeked.token {
+                    Token::Punct(Punct::CloseParenthesis) => None,
+                    _ => Some(Expression::parse(tokens, output)?),
+                };
+
+                take_punct(tokens, Punct::CloseParenthesis, output)?;
+
+                let body = Box::new(Statement::parse(tokens, output)?);
+
+                Ok(Self::For {
+                    init,
+                    cond,
+                    post,
+                    body,
+                })
             }
 
             Token::Punct(Punct::Semicolon) => {
@@ -380,6 +498,7 @@ impl Statement {
                     block_item.emit_tacky(instructions);
                 }
             }
+            _ => todo!("emit tacky for loops"),
         }
     }
 }

@@ -10,5 +10,8 @@ int main(void) {
   else
     d = a ? 2 : 3;
 
+  int j = 1;
+  for(int i = 1; i < 10; i = i + 1) j = j * i;
+
   return ~(-2) + a * b - (c = 1);
 }

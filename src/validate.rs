@@ -133,6 +133,7 @@ fn resolve_statement(
             resolve_block(block, &mut variable_map, output)
         }
         p::Statement::Null => Ok(()), // nothing to do
+        _ => unimplemented!(),
     }
 }
 
