@@ -508,7 +508,92 @@ impl Statement {
                     block_item.emit_tacky(instructions);
                 }
             }
-            _ => todo!("emit tacky for loops"),
+            Self::Break(label) => {
+                let target = label.unwrap().with_prefix("break_");
+                instructions.push(crate::tacky::Instruction::Jump { target });
+            }
+            Self::Continue(label) => {
+                let target = label.unwrap().with_prefix("continue_");
+                instructions.push(crate::tacky::Instruction::Jump { target });
+            }
+            Self::While { cond, body, label } => {
+                let start = label.clone().with_prefix("continue_");
+                let end = label.with_prefix("break_");
+
+                instructions.push(crate::tacky::Instruction::Label(start.clone()));
+
+                let condition = cond.emit_tacky(instructions);
+                instructions.push(crate::tacky::Instruction::JumpIfZero {
+                    condition,
+                    target: end.clone(),
+                });
+
+                body.emit_tacky(instructions);
+
+                instructions.push(crate::tacky::Instruction::Jump { target: start });
+                instructions.push(crate::tacky::Instruction::Label(end));
+            }
+
+            Self::DoWhile { body, cond, label } => {
+                let start = Identifier::new_label("start");
+                instructions.push(crate::tacky::Instruction::Label(start.clone()));
+
+                body.emit_tacky(instructions);
+
+                let continue_ = label.clone().with_prefix("continue_");
+                instructions.push(crate::tacky::Instruction::Label(continue_));
+
+                let condition = cond.emit_tacky(instructions);
+                instructions.push(crate::tacky::Instruction::JumpIfNotZero {
+                    condition,
+                    target: start,
+                });
+
+                let break_ = label.with_prefix("break_");
+                instructions.push(crate::tacky::Instruction::Label(break_));
+            }
+
+            Self::For {
+                init,
+                cond,
+                post,
+                body,
+                label,
+            } => {
+                let start = Identifier::new_label("start");
+                let continue_ = label.clone().with_prefix("continue_");
+                let break_ = label.with_prefix("break_");
+
+                match init {
+                    ForInit::D(decleration) => decleration.emit_tacky(instructions),
+                    ForInit::E(maybe_expr) => {
+                        if let Some(expr) = maybe_expr {
+                            expr.emit_tacky(instructions);
+                        }
+                    }
+                }
+
+                instructions.push(crate::tacky::Instruction::Label(start.clone()));
+
+                if let Some(cond) = cond {
+                    let condition = cond.emit_tacky(instructions);
+                    instructions.push(crate::tacky::Instruction::JumpIfZero {
+                        condition,
+                        target: break_.clone(),
+                    });
+                }
+
+                body.emit_tacky(instructions);
+
+                instructions.push(crate::tacky::Instruction::Label(continue_.clone()));
+
+                if let Some(post) = post {
+                    post.emit_tacky(instructions);
+                }
+
+                instructions.push(crate::tacky::Instruction::Jump { target: start });
+                instructions.push(crate::tacky::Instruction::Label(break_));
+            }
         }
     }
 }

@@ -61,6 +61,10 @@ impl Identifier {
         assert_ne!(value, usize::MAX, "max number of loops exceeded");
         Self(format!("loop.{value}"))
     }
+
+    pub fn with_prefix(self, prefix: &str) -> Self {
+        Self(format!("{prefix}{}", self.0))
+    }
 }
 
 impl std::fmt::Display for Identifier {
