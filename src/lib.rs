@@ -34,7 +34,7 @@ pub struct Options {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Identifier(pub String);
+pub struct Identifier(String);
 
 impl Identifier {
     pub fn new(s: impl Into<String>) -> Self {
@@ -51,8 +51,19 @@ impl Identifier {
     pub fn new_label(prefix: &str) -> Self {
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
         let value = COUNTER.fetch_add(1, Ordering::Relaxed);
-        assert_ne!(value, usize::MAX, "max number of temp values exceeded");
+        assert_ne!(value, usize::MAX, "max number of labels exceeded");
         Self(format!("{prefix}.{value}"))
+    }
+
+    pub fn new_loop() -> Self {
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let value = COUNTER.fetch_add(1, Ordering::Relaxed);
+        assert_ne!(value, usize::MAX, "max number of loops exceeded");
+        Self(format!("loop.{value}"))
+    }
+
+    pub fn with_prefix(self, prefix: &str) -> Self {
+        Self(format!("{prefix}{}", self.0))
     }
 }
 
@@ -225,7 +236,8 @@ pub fn compiler(
         return Ok(false);
     }
 
-    validate::main(&mut program, &output).map_err(|_| None)?;
+    validate::resolve_variables(&mut program, &output).map_err(|_| None)?;
+    validate::resolve_loops(&mut program, &output).map_err(|_| None)?;
     if options.validate {
         println!("validation succeeded, new program:\n{program:#?}");
         return Ok(false);

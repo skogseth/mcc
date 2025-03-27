@@ -251,6 +251,31 @@ impl Declaration {
 }
 
 #[derive(Debug, Clone)]
+pub enum ForInit {
+    D(Declaration),
+    E(Option<Expression>),
+}
+
+impl ForInit {
+    fn parse(tokens: &mut TokenIter, output: &Output) -> Result<Self, ParseError> {
+        let token_elem = tokens.peek().ok_or(ParseError::EarlyEnd("block item"))?;
+
+        match token_elem.token {
+            Token::Keyword(Keyword::Int) => Declaration::parse(tokens, output).map(ForInit::D),
+            Token::Punct(Punct::Semicolon) => {
+                let _ = tokens.next().expect("token must be semicolon");
+                Ok(Self::E(None))
+            }
+            _ => {
+                let expr = take_expr(tokens, output)?;
+                take_punct(tokens, Punct::Semicolon, output)?;
+                Ok(Self::E(Some(expr)))
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum Statement {
     Return(Expression),
     Expression(Expression),
@@ -260,6 +285,25 @@ pub enum Statement {
         else_: Option<Box<Statement>>,
     },
     Compound(Block),
+    Break(Option<Identifier>),
+    Continue(Option<Identifier>),
+    While {
+        cond: Expression,
+        body: Box<Statement>,
+        label: Identifier,
+    },
+    DoWhile {
+        body: Box<Statement>,
+        cond: Expression,
+        label: Identifier,
+    },
+    For {
+        init: ForInit,
+        cond: Option<Expression>,
+        post: Option<Expression>,
+        body: Box<Statement>,
+        label: Identifier,
+    },
     Null,
 }
 
@@ -303,6 +347,90 @@ impl Statement {
                 let expr = take_expr(tokens, output)?;
                 take_punct(tokens, Punct::Semicolon, output)?;
                 Ok(Self::Return(expr))
+            }
+
+            Token::Keyword(Keyword::Break) => {
+                let _ = tokens.next().expect("token must be break keyword");
+                take_punct(tokens, Punct::Semicolon, output)?;
+                Ok(Self::Break(None))
+            }
+
+            Token::Keyword(Keyword::Continue) => {
+                let _ = tokens.next().expect("token must be continue keyword");
+                take_punct(tokens, Punct::Semicolon, output)?;
+                Ok(Self::Continue(None))
+            }
+
+            Token::Keyword(Keyword::While) => {
+                let _ = tokens.next().expect("token must be while keyword");
+
+                take_punct(tokens, Punct::OpenParenthesis, output)?;
+                let cond = take_expr(tokens, output)?;
+                take_punct(tokens, Punct::CloseParenthesis, output)?;
+
+                let body = Box::new(Statement::parse(tokens, output)?);
+
+                let label = Identifier::new_loop();
+
+                Ok(Self::While { cond, body, label })
+            }
+
+            Token::Keyword(Keyword::Do) => {
+                let _ = tokens.next().expect("token must be do keyword");
+
+                let body = Box::new(Statement::parse(tokens, output)?);
+
+                let elem = tokens.next().expect("token must be while keyword");
+                if !matches!(elem.token, Token::Keyword(Keyword::While)) {
+                    output.error(elem.span, String::from("expected `while`"));
+                    return Err(ParseError::BadTokens);
+                }
+
+                take_punct(tokens, Punct::OpenParenthesis, output)?;
+                let cond = take_expr(tokens, output)?;
+                take_punct(tokens, Punct::CloseParenthesis, output)?;
+
+                take_punct(tokens, Punct::Semicolon, output)?;
+
+                let label = Identifier::new_loop();
+
+                Ok(Self::DoWhile { body, cond, label })
+            }
+
+            Token::Keyword(Keyword::For) => {
+                let _ = tokens.next().expect("token must be for keyword");
+
+                take_punct(tokens, Punct::OpenParenthesis, output)?;
+
+                let init = ForInit::parse(tokens, output)?;
+
+                let peeked = tokens.peek().ok_or(ParseError::EarlyEnd("condition"))?;
+                let cond = match peeked.token {
+                    Token::Punct(Punct::Semicolon) => None,
+                    _ => Some(take_expr(tokens, output)?),
+                };
+
+                take_punct(tokens, Punct::Semicolon, output)?;
+
+                let peeked = tokens.peek().ok_or(ParseError::EarlyEnd("post expr"))?;
+                let post = match peeked.token {
+                    Token::Punct(Punct::CloseParenthesis) => None,
+                    _ => Some(Expression::parse(tokens, output)?),
+                };
+
+                take_punct(tokens, Punct::CloseParenthesis, output)?;
+
+                let body = Box::new(Statement::parse(tokens, output)?);
+
+                let label = Identifier::new_loop();
+
+                Ok(Self::For {
+                    init,
+                    cond,
+                    post,
+                    body,
+                    label,
+                })
             }
 
             Token::Punct(Punct::Semicolon) => {
@@ -362,7 +490,7 @@ impl Statement {
                     target: else_label.clone(),
                 });
 
-                let _ = then.emit_tacky(instructions);
+                then.emit_tacky(instructions);
                 instructions.push(crate::tacky::Instruction::Jump {
                     target: end_label.clone(),
                 });
@@ -379,6 +507,92 @@ impl Statement {
                 for block_item in block.0 {
                     block_item.emit_tacky(instructions);
                 }
+            }
+            Self::Break(label) => {
+                let target = label.unwrap().with_prefix("break_");
+                instructions.push(crate::tacky::Instruction::Jump { target });
+            }
+            Self::Continue(label) => {
+                let target = label.unwrap().with_prefix("continue_");
+                instructions.push(crate::tacky::Instruction::Jump { target });
+            }
+            Self::While { cond, body, label } => {
+                let continue_ = label.clone().with_prefix("continue_");
+                let break_ = label.with_prefix("break_");
+
+                instructions.push(crate::tacky::Instruction::Label(continue_.clone()));
+
+                let condition = cond.emit_tacky(instructions);
+                instructions.push(crate::tacky::Instruction::JumpIfZero {
+                    condition,
+                    target: break_.clone(),
+                });
+
+                body.emit_tacky(instructions);
+
+                instructions.push(crate::tacky::Instruction::Jump { target: continue_ });
+                instructions.push(crate::tacky::Instruction::Label(break_));
+            }
+
+            Self::DoWhile { body, cond, label } => {
+                let start = Identifier::new_label("start");
+                instructions.push(crate::tacky::Instruction::Label(start.clone()));
+
+                body.emit_tacky(instructions);
+
+                let continue_ = label.clone().with_prefix("continue_");
+                instructions.push(crate::tacky::Instruction::Label(continue_));
+
+                let condition = cond.emit_tacky(instructions);
+                instructions.push(crate::tacky::Instruction::JumpIfNotZero {
+                    condition,
+                    target: start,
+                });
+
+                let break_ = label.with_prefix("break_");
+                instructions.push(crate::tacky::Instruction::Label(break_));
+            }
+
+            Self::For {
+                init,
+                cond,
+                post,
+                body,
+                label,
+            } => {
+                let start = Identifier::new_label("start");
+                let continue_ = label.clone().with_prefix("continue_");
+                let break_ = label.with_prefix("break_");
+
+                match init {
+                    ForInit::D(decleration) => decleration.emit_tacky(instructions),
+                    ForInit::E(maybe_expr) => {
+                        if let Some(expr) = maybe_expr {
+                            expr.emit_tacky(instructions);
+                        }
+                    }
+                }
+
+                instructions.push(crate::tacky::Instruction::Label(start.clone()));
+
+                if let Some(cond) = cond {
+                    let condition = cond.emit_tacky(instructions);
+                    instructions.push(crate::tacky::Instruction::JumpIfZero {
+                        condition,
+                        target: break_.clone(),
+                    });
+                }
+
+                body.emit_tacky(instructions);
+
+                instructions.push(crate::tacky::Instruction::Label(continue_.clone()));
+
+                if let Some(post) = post {
+                    post.emit_tacky(instructions);
+                }
+
+                instructions.push(crate::tacky::Instruction::Jump { target: start });
+                instructions.push(crate::tacky::Instruction::Label(break_));
             }
         }
     }
