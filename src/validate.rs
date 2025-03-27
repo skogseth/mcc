@@ -45,7 +45,7 @@ mod variable_map {
         pub fn wrap(&'a self) -> Self {
             Self {
                 current: HashMap::new(),
-                inner: Some(&self),
+                inner: Some(self),
             }
         }
     }

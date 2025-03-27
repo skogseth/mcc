@@ -490,7 +490,7 @@ impl Statement {
                     target: else_label.clone(),
                 });
 
-                let _ = then.emit_tacky(instructions);
+                then.emit_tacky(instructions);
                 instructions.push(crate::tacky::Instruction::Jump {
                     target: end_label.clone(),
                 });
@@ -517,21 +517,21 @@ impl Statement {
                 instructions.push(crate::tacky::Instruction::Jump { target });
             }
             Self::While { cond, body, label } => {
-                let start = label.clone().with_prefix("continue_");
-                let end = label.with_prefix("break_");
+                let continue_ = label.clone().with_prefix("continue_");
+                let break_ = label.with_prefix("break_");
 
-                instructions.push(crate::tacky::Instruction::Label(start.clone()));
+                instructions.push(crate::tacky::Instruction::Label(continue_.clone()));
 
                 let condition = cond.emit_tacky(instructions);
                 instructions.push(crate::tacky::Instruction::JumpIfZero {
                     condition,
-                    target: end.clone(),
+                    target: break_.clone(),
                 });
 
                 body.emit_tacky(instructions);
 
-                instructions.push(crate::tacky::Instruction::Jump { target: start });
-                instructions.push(crate::tacky::Instruction::Label(end));
+                instructions.push(crate::tacky::Instruction::Jump { target: continue_ });
+                instructions.push(crate::tacky::Instruction::Label(break_));
             }
 
             Self::DoWhile { body, cond, label } => {
