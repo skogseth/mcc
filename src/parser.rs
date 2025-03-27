@@ -251,7 +251,7 @@ impl Declaration {
 }
 
 #[derive(Debug, Clone)]
-enum ForInit {
+pub enum ForInit {
     D(Declaration),
     E(Option<Expression>),
 }
@@ -285,21 +285,24 @@ pub enum Statement {
         else_: Option<Box<Statement>>,
     },
     Compound(Block),
-    Break,
-    Continue,
+    Break(Option<Identifier>),
+    Continue(Option<Identifier>),
     While {
         cond: Expression,
         body: Box<Statement>,
+        label: Identifier,
     },
     DoWhile {
         body: Box<Statement>,
         cond: Expression,
+        label: Identifier,
     },
     For {
         init: ForInit,
         cond: Option<Expression>,
         post: Option<Expression>,
         body: Box<Statement>,
+        label: Identifier,
     },
     Null,
 }
@@ -349,13 +352,13 @@ impl Statement {
             Token::Keyword(Keyword::Break) => {
                 let _ = tokens.next().expect("token must be break keyword");
                 take_punct(tokens, Punct::Semicolon, output)?;
-                Ok(Self::Break)
+                Ok(Self::Break(None))
             }
 
             Token::Keyword(Keyword::Continue) => {
                 let _ = tokens.next().expect("token must be continue keyword");
                 take_punct(tokens, Punct::Semicolon, output)?;
-                Ok(Self::Continue)
+                Ok(Self::Continue(None))
             }
 
             Token::Keyword(Keyword::While) => {
@@ -367,7 +370,9 @@ impl Statement {
 
                 let body = Box::new(Statement::parse(tokens, output)?);
 
-                Ok(Self::While { cond, body })
+                let label = Identifier::new_loop();
+
+                Ok(Self::While { cond, body, label })
             }
 
             Token::Keyword(Keyword::Do) => {
@@ -387,7 +392,9 @@ impl Statement {
 
                 take_punct(tokens, Punct::Semicolon, output)?;
 
-                Ok(Self::DoWhile { body, cond })
+                let label = Identifier::new_loop();
+
+                Ok(Self::DoWhile { body, cond, label })
             }
 
             Token::Keyword(Keyword::For) => {
@@ -415,11 +422,14 @@ impl Statement {
 
                 let body = Box::new(Statement::parse(tokens, output)?);
 
+                let label = Identifier::new_loop();
+
                 Ok(Self::For {
                     init,
                     cond,
                     post,
                     body,
+                    label,
                 })
             }
 
