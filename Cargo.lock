@@ -220,9 +220,14 @@ dependencies = [
  "anyhow",
  "clap",
  "console",
+ "mcc-preprocessor",
  "tempfile",
  "thiserror",
 ]
+
+[[package]]
+name = "mcc-preprocessor"
+version = "0.1.0"
 
 [[package]]
 name = "memchr"

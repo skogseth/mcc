@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::str::FromStr;
 
 use anyhow::Context;
 use clap::Parser;
@@ -12,6 +13,35 @@ struct Cli {
 
     #[clap(flatten)]
     options: Options,
+
+    #[clap(short, long, default_value_t = Preprocessor::Gcc)]
+    preprocessor: Preprocessor,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Preprocessor {
+    Mcc,
+    Gcc,
+}
+
+impl std::fmt::Display for Preprocessor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Mcc => f.write_str("mcc"),
+            Self::Gcc => f.write_str("gcc"),
+        }
+    }
+}
+
+impl FromStr for Preprocessor {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "mcc" => Ok(Self::Mcc),
+            "gcc" => Ok(Self::Gcc),
+            _ => Err(format!("'{s}' is not a valid preprocessor")),
+        }
+    }
 }
 
 fn main() -> Result<(), anyhow::Error> {
@@ -34,7 +64,10 @@ fn main() -> Result<(), anyhow::Error> {
     let tempdir = tempfile::tempdir().context("failed to create tempdir")?;
 
     let preprocessed_file = tempdir.path().join(filename).with_extension("i");
-    preprocessor(&cli.filepath, &preprocessed_file)?;
+    match cli.preprocessor {
+        Preprocessor::Mcc => mcc::preprocessor(&cli.filepath, &preprocessed_file)?,
+        Preprocessor::Gcc => gcc::preprocessor(&cli.filepath, &preprocessed_file)?,
+    }
 
     let assembly_file = tempdir.path().join(filename).with_extension("s");
 
@@ -49,7 +82,7 @@ fn main() -> Result<(), anyhow::Error> {
         Ok(_keep_going @ false) => Ok(()),
         Ok(_keep_going @ true) => {
             let executable_file = basedir.join(filename).with_extension("");
-            produce_executable(&assembly_file, &executable_file)?;
+            gcc::produce_executable(&assembly_file, &executable_file)?;
             Ok(())
         }
         Err(maybe_error_message) => {
@@ -61,42 +94,46 @@ fn main() -> Result<(), anyhow::Error> {
     }
 }
 
-fn preprocessor(input: &Path, output: &Path) -> Result<(), anyhow::Error> {
-    let output = Command::new("gcc")
-        .arg("-E")
-        .arg("-P")
-        .arg(input)
-        .arg("-o")
-        .arg(output)
-        .output()
-        .context("failed to run `gcc` for preprocessing")?;
+mod gcc {
+    use super::*;
 
-    if !output.status.success() {
-        return Err(anyhow::anyhow!(
-            "Process failed:\n --- stdout ---\n{}\n\n --- stderr --- \n{}\n\n",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr),
-        ));
+    pub fn preprocessor(input: &Path, output: &Path) -> Result<(), anyhow::Error> {
+        let output = Command::new("gcc")
+            .arg("-E")
+            .arg("-P")
+            .arg(input)
+            .arg("-o")
+            .arg(output)
+            .output()
+            .context("failed to run `gcc` for preprocessing")?;
+
+        if !output.status.success() {
+            return Err(anyhow::anyhow!(
+                "Process failed:\n --- stdout ---\n{}\n\n --- stderr --- \n{}\n\n",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr),
+            ));
+        }
+
+        Ok(())
     }
 
-    Ok(())
-}
+    pub fn produce_executable(input: &Path, output: &Path) -> Result<(), anyhow::Error> {
+        let output = Command::new("gcc")
+            .arg(input)
+            .arg("-o")
+            .arg(output)
+            .output()
+            .unwrap();
 
-fn produce_executable(input: &Path, output: &Path) -> Result<(), anyhow::Error> {
-    let output = Command::new("gcc")
-        .arg(input)
-        .arg("-o")
-        .arg(output)
-        .output()
-        .unwrap();
+        if !output.status.success() {
+            return Err(anyhow::anyhow!(
+                "Process failed:\n --- stdout ---\n{}\n\n --- stderr --- \n{}\n\n",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr),
+            ));
+        }
 
-    if !output.status.success() {
-        return Err(anyhow::anyhow!(
-            "Process failed:\n --- stdout ---\n{}\n\n --- stderr --- \n{}\n\n",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr),
-        ));
+        Ok(())
     }
-
-    Ok(())
 }

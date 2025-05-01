@@ -221,3 +221,12 @@ pub fn compiler(
 
     Ok(true)
 }
+
+pub fn preprocessor(input: &Path, output: &Path) -> Result<(), anyhow::Error> {
+    let input_content =
+        std::fs::read_to_string(input).context("failed to read input file for preprocessor")?;
+    let output_content = mcc_preprocessor::main(&input_content);
+    std::fs::write(output, output_content.as_bytes())
+        .context("failed to write preprocessor output to file")?;
+    Ok(())
+}
