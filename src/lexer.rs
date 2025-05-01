@@ -56,7 +56,7 @@ impl<I: Iterator<Item = CharElem>> Iterator for Lexer<I> {
 
             let token = match extracted.parse::<Keyword>() {
                 Ok(keyword) => Token::Keyword(keyword),
-                Err(()) => Token::Identifier(Identifier(extracted)),
+                Err(()) => Token::Identifier(Identifier::new(extracted)),
             };
 
             Some(Ok(TokenElem { token, span }))

@@ -1,14 +1,15 @@
 use std::iter::Peekable;
 use std::vec::IntoIter;
 
+use crate::identifier::Identifier;
 use crate::lexer::{Keyword, Operator, Punct, Token, TokenElem};
-use crate::{Identifier, Output, Span};
+use crate::{Output, Span};
 
 pub fn parse(tokens: Vec<TokenElem>, output: &Output) -> Result<Program, ParseError> {
     let mut tokens = tokens.into_iter().peekable();
 
     let main = Function::parse(&mut tokens, output)?;
-    assert_eq!(main.name.0.as_str(), "main");
+    assert_eq!(main.name.as_str(), "main");
 
     let remaining_tokens: Vec<TokenElem> = tokens.collect();
     if !remaining_tokens.is_empty() {
@@ -1241,7 +1242,7 @@ mod tests {
             just_tokens,
             [
                 Token::Keyword(Keyword::Int),
-                Token::Identifier(Identifier(String::from("a"))),
+                Token::Identifier(Identifier::new("a")),
                 Token::Operator(Operator::Assignment),
                 Token::Constant(0),
                 Token::Operator(Operator::QuestionMark),
@@ -1262,7 +1263,7 @@ mod tests {
         let mut tokens = tokens.into_iter().peekable();
         let parsed = Declaration::parse(&mut tokens, &DUMMY_OUTPUT).unwrap();
 
-        assert_eq!(parsed.name, Identifier(String::from("a")));
+        assert_eq!(parsed.name, Identifier::new("a"));
         assert_eq!(
             parsed.init,
             Some(Expression::Conditional {

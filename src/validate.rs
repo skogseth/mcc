@@ -95,7 +95,7 @@ fn resolve_decleration(
         return Err(ValidationError);
     }
 
-    let unique_name = Identifier::new_label(&decleration.name.0);
+    let unique_name = Identifier::new_label(decleration.name.as_str());
 
     // Retrieve the original name and replace it with the new unique name.
     let original_name = std::mem::replace(&mut decleration.name, unique_name.clone());

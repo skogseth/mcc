@@ -1,16 +1,17 @@
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::{Context, anyhow};
 use clap::Args;
 use thiserror::Error;
 
 mod assembly;
+mod identifier;
 mod lexer;
 mod parser;
 mod tacky;
 mod validate;
 
+use crate::identifier::Identifier;
 use crate::lexer::{CharElem, LexerError};
 use crate::parser::ParseError;
 
@@ -31,46 +32,6 @@ pub struct Options {
 
     #[arg(long)]
     pub codegen: bool,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Identifier(String);
-
-impl Identifier {
-    pub fn new(s: impl Into<String>) -> Self {
-        Self(s.into())
-    }
-
-    pub fn new_temp() -> Self {
-        static COUNTER: AtomicUsize = AtomicUsize::new(0);
-        let value = COUNTER.fetch_add(1, Ordering::Relaxed);
-        assert_ne!(value, usize::MAX, "max number of temp values exceeded");
-        Self(format!("tmp.{value}"))
-    }
-
-    pub fn new_label(prefix: &str) -> Self {
-        static COUNTER: AtomicUsize = AtomicUsize::new(0);
-        let value = COUNTER.fetch_add(1, Ordering::Relaxed);
-        assert_ne!(value, usize::MAX, "max number of labels exceeded");
-        Self(format!("{prefix}.{value}"))
-    }
-
-    pub fn new_loop() -> Self {
-        static COUNTER: AtomicUsize = AtomicUsize::new(0);
-        let value = COUNTER.fetch_add(1, Ordering::Relaxed);
-        assert_ne!(value, usize::MAX, "max number of loops exceeded");
-        Self(format!("loop.{value}"))
-    }
-
-    pub fn with_prefix(self, prefix: &str) -> Self {
-        Self(format!("{prefix}{}", self.0))
-    }
-}
-
-impl std::fmt::Display for Identifier {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
