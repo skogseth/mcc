@@ -6,6 +6,7 @@ pub struct Error;
 
 pub fn main(input: &str) -> String {
     let mut defines: BTreeMap<&str, String> = BTreeMap::new();
+    let mut cond_counter = CondCounter::default();
 
     input
         .lines()
@@ -13,19 +14,8 @@ pub fn main(input: &str) -> String {
             match line.strip_prefix('#') {
                 // Line contains a preprocessor directive
                 Some(rest) => {
-                    let mut split = rest.split_whitespace();
-
-                    // TODO: Handle these unwraps, somehow?
-                    let directive: Directive = split.next().unwrap().parse().unwrap();
-
-                    match directive {
-                        Directive::Define => {
-                            let name = split.next().unwrap();
-                            let remains: String = split.collect();
-                            defines.insert(name, remains);
-                            None
-                        }
-                    }
+                    handle_directive(rest, &mut defines, &mut cond_counter);
+                    None
                 }
 
                 // Line does not contain a preprocessor directive
@@ -36,7 +26,7 @@ pub fn main(input: &str) -> String {
                         line = line.replace(define, replace_with);
                     }
 
-                    Some(line)
+                    cond_counter.current().then(|| line)
                 }
             }
         })
@@ -44,7 +34,52 @@ pub fn main(input: &str) -> String {
 }
 
 enum Directive {
+    // Macros
     Define,
+    Undef,
+
+    // Conditionals
+    Ifdef,
+    Ifndef,
+    Endif,
+}
+
+fn handle_directive<'a>(
+    rest: &'a str,
+    defines: &mut BTreeMap<&'a str, String>,
+    cond_counter: &mut CondCounter,
+) {
+    let mut split = rest.split_whitespace();
+
+    // TODO: Handle these unwraps, somehow?
+    let directive: Directive = split.next().unwrap().parse().unwrap();
+
+    match directive {
+        Directive::Define => {
+            let name = split.next().unwrap();
+            let remains: String = split.collect();
+            defines.insert(name, remains);
+        }
+        Directive::Undef => {
+            let name = split.next().unwrap();
+            assert!(split.next().is_none());
+            defines.remove(name).unwrap();
+        }
+        Directive::Ifdef => {
+            let name = split.next().unwrap();
+            assert!(split.next().is_none());
+            cond_counter.push(defines.contains_key(name));
+        }
+        Directive::Ifndef => {
+            let name = split.next().unwrap();
+            assert!(split.next().is_none());
+            cond_counter.push(!defines.contains_key(name));
+        }
+        Directive::Endif => {
+            assert!(split.next().is_none());
+            cond_counter.pop().unwrap();
+        }
+    }
 }
 
 impl FromStr for Directive {
@@ -52,7 +87,31 @@ impl FromStr for Directive {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "define" => Ok(Self::Define),
+            "undef" => Ok(Self::Undef),
+            "ifdef" => Ok(Self::Ifdef),
+            "ifndef" => Ok(Self::Ifndef),
+            "endif" => Ok(Self::Endif),
             _ => Err(format!("unknown preprocessor directive: {s}")),
+        }
+    }
+}
+
+use utils::*;
+mod utils {
+    #[derive(Debug, Default)]
+    pub struct CondCounter(Vec<bool>);
+
+    impl CondCounter {
+        pub fn push(&mut self, value: bool) {
+            self.0.push(value);
+        }
+
+        pub fn current(&self) -> bool {
+            self.0.last().copied().unwrap_or(true)
+        }
+
+        pub fn pop(&mut self) -> Option<bool> {
+            self.0.pop()
         }
     }
 }
