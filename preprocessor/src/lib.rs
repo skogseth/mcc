@@ -5,7 +5,7 @@ use std::str::FromStr;
 pub struct Error;
 
 pub fn main(input: &str) -> String {
-    let mut defines: BTreeMap<&str, String> = BTreeMap::new();
+    let mut defines: BTreeMap<&str, &str> = BTreeMap::new();
     let mut cond_counter = CondCounter::default();
 
     input
@@ -20,13 +20,17 @@ pub fn main(input: &str) -> String {
 
                 // Line does not contain a preprocessor directive
                 None => {
+                    if !cond_counter.currently_active() {
+                        return None;
+                    }
+
                     // TODO: This is horrible performance wise, right?
                     let mut line: String = line.to_owned();
                     for (define, replace_with) in &defines {
                         line = line.replace(define, replace_with);
                     }
 
-                    cond_counter.current().unwrap_or(true).then_some(line)
+                    Some(line)
                 }
             }
         })
@@ -49,6 +53,10 @@ enum Directive {
     Ifndef,
     Elifdef,
     Elifndef,
+
+    // Output
+    Error,
+    Warning,
 }
 
 impl FromStr for Directive {
@@ -68,6 +76,9 @@ impl FromStr for Directive {
             "elifdef" => Ok(Self::Elifdef),
             "elifndef" => Ok(Self::Elifndef),
 
+            "error" => Ok(Self::Error),
+            "warning" => Ok(Self::Warning),
+
             _ => Err(format!("unknown preprocessor directive: {s}")),
         }
     }
@@ -75,80 +86,114 @@ impl FromStr for Directive {
 
 fn handle_directive<'a>(
     rest: &'a str,
-    defines: &mut BTreeMap<&'a str, String>,
+    defines: &mut BTreeMap<&'a str, &'a str>,
     cond_counter: &mut CondCounter,
 ) {
-    let mut split = rest.split_whitespace();
+    let (directive, rest) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
 
-    // TODO: Handle these unwraps, somehow?
-    let directive: Directive = split.next().unwrap().parse().unwrap();
+    // TODO: Handle parsing error
+    let directive: Directive = directive.parse().unwrap();
 
     match directive {
         Directive::Define => {
-            let name = split.next().unwrap();
-            let remains: String = split.collect();
-            defines.insert(name, remains);
+            if cond_counter.currently_active() {
+                let (name, remains) = rest.split_once(char::is_whitespace).unwrap();
+                defines.insert(name, remains);
+            }
         }
         Directive::Undef => {
-            let name = split.next().unwrap();
-            assert!(split.next().is_none());
-            defines.remove(name).unwrap();
+            if cond_counter.currently_active() {
+                let name = rest;
+                assert!(!name.chars().any(char::is_whitespace));
+                defines.remove(name).unwrap();
+            }
         }
 
         Directive::Else => {
-            assert!(split.next().is_none());
-            let current = cond_counter.current_mut().unwrap();
-            *current = !*current;
+            assert!(rest.is_empty());
+            cond_counter.else_if(|| true);
         }
         Directive::Endif => {
-            assert!(split.next().is_none());
+            assert!(rest.is_empty());
             cond_counter.pop().unwrap();
         }
 
         Directive::Ifdef => {
-            let name = split.next().unwrap();
-            assert!(split.next().is_none());
+            let name = rest;
+            assert!(!name.chars().any(char::is_whitespace));
             cond_counter.push(defines.contains_key(name));
         }
         Directive::Ifndef => {
-            let name = split.next().unwrap();
-            assert!(split.next().is_none());
+            let name = rest;
+            assert!(!name.chars().any(char::is_whitespace));
             cond_counter.push(!defines.contains_key(name));
         }
         Directive::Elifdef => {
-            let name = split.next().unwrap();
-            assert!(split.next().is_none());
-            let current = cond_counter.current_mut().unwrap();
-            *current = !*current && defines.contains_key(name);
+            let name = rest;
+            assert!(!name.chars().any(char::is_whitespace));
+            cond_counter.else_if(|| defines.contains_key(name));
         }
         Directive::Elifndef => {
-            let name = split.next().unwrap();
-            assert!(split.next().is_none());
-            let current = cond_counter.current_mut().unwrap();
-            *current = !*current && !defines.contains_key(name);
+            let name = rest;
+            assert!(!name.chars().any(char::is_whitespace));
+            cond_counter.else_if(|| !defines.contains_key(name));
+        }
+
+        Directive::Error => {
+            if cond_counter.currently_active() {
+                panic!("{rest}");
+            }
+        }
+        Directive::Warning => {
+            if cond_counter.currently_active() {
+                eprintln!("{rest}");
+            }
         }
     }
 }
 
 use utils::*;
 mod utils {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum CondState {
+        Active,
+        Inactive { was_active: bool },
+    }
+
     #[derive(Debug, Default)]
-    pub struct CondCounter(Vec<bool>);
+    pub struct CondCounter(Vec<CondState>);
 
     impl CondCounter {
-        pub fn push(&mut self, value: bool) {
-            self.0.push(value);
+        pub fn push(&mut self, active: bool) {
+            self.0.push(match active {
+                true => CondState::Active,
+                false => CondState::Inactive { was_active: false },
+            });
         }
 
-        pub fn current(&self) -> Option<bool> {
-            self.0.last().copied()
+        pub fn currently_active(&self) -> bool {
+            self.0
+                .last()
+                .copied()
+                .map(|state| state == CondState::Active)
+                .unwrap_or(true)
         }
 
-        pub fn current_mut(&mut self) -> Option<&mut bool> {
-            self.0.last_mut()
+        // TODO: Not sure I like this name
+        pub fn else_if(&mut self, pred: impl Fn() -> bool) {
+            let current = self.0.last_mut().unwrap();
+            match *current {
+                CondState::Active => *current = CondState::Inactive { was_active: true },
+                CondState::Inactive { was_active: true } => { /* nothing to do */ }
+                CondState::Inactive { was_active: false } => {
+                    if pred() {
+                        *current = CondState::Active;
+                    }
+                }
+            }
         }
 
-        pub fn pop(&mut self) -> Option<bool> {
+        pub fn pop(&mut self) -> Option<CondState> {
             self.0.pop()
         }
     }

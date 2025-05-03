@@ -184,7 +184,7 @@ pub fn compiler(
             anyhow!("failed to lex file")
         })?;
     if options.lex {
-        println!("{tokens:?}");
+        println!("{tokens:#?}");
         return Ok(false);
     }
 

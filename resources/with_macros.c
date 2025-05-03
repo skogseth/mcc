@@ -19,7 +19,17 @@ int main(void) {
   int b = 2;
 #elifdef VALUE
   int b = 3;
+#else
+  int b = 4;
 #endif 
+
+#ifdef BURGER
+#warning "Burger is defined"
+#elifndef PIZZA
+#warning "PIZZA is not defined"
+#else
+#error "This should not happen"
+#endif
   
   return a * b * VALUE;
 }

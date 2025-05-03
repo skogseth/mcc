@@ -16,6 +16,9 @@ struct Cli {
 
     #[clap(short, long, default_value_t = Preprocessor::Gcc)]
     preprocessor: Preprocessor,
+
+    #[clap(long)]
+    only_preprocess: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -67,6 +70,12 @@ fn main() -> Result<(), anyhow::Error> {
     match cli.preprocessor {
         Preprocessor::Mcc => mcc::preprocessor(&cli.filepath, &preprocessed_file)?,
         Preprocessor::Gcc => gcc::preprocessor(&cli.filepath, &preprocessed_file)?,
+    }
+
+    if cli.only_preprocess {
+        let content = std::fs::read_to_string(&preprocessed_file).unwrap();
+        println!("{content}");
+        return Ok(());
     }
 
     let assembly_file = tempdir.path().join(filename).with_extension("s");
