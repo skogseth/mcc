@@ -26,7 +26,7 @@ pub fn main(input: &str) -> String {
                         line = line.replace(define, replace_with);
                     }
 
-                    cond_counter.current().then(|| line)
+                    cond_counter.current().unwrap_or(true).then_some(line)
                 }
             }
         })
@@ -47,8 +47,8 @@ enum Directive {
     // Macro conditionals
     Ifdef,
     Ifndef,
-    // Elifdef
-    // Elifndef
+    Elifdef,
+    Elifndef,
 }
 
 impl FromStr for Directive {
@@ -65,6 +65,8 @@ impl FromStr for Directive {
 
             "ifdef" => Ok(Self::Ifdef),
             "ifndef" => Ok(Self::Ifndef),
+            "elifdef" => Ok(Self::Elifdef),
+            "elifndef" => Ok(Self::Elifndef),
 
             _ => Err(format!("unknown preprocessor directive: {s}")),
         }
@@ -95,7 +97,8 @@ fn handle_directive<'a>(
 
         Directive::Else => {
             assert!(split.next().is_none());
-            cond_counter.swap_current();
+            let current = cond_counter.current_mut().unwrap();
+            *current = !*current;
         }
         Directive::Endif => {
             assert!(split.next().is_none());
@@ -112,6 +115,18 @@ fn handle_directive<'a>(
             assert!(split.next().is_none());
             cond_counter.push(!defines.contains_key(name));
         }
+        Directive::Elifdef => {
+            let name = split.next().unwrap();
+            assert!(split.next().is_none());
+            let current = cond_counter.current_mut().unwrap();
+            *current = !*current && defines.contains_key(name);
+        }
+        Directive::Elifndef => {
+            let name = split.next().unwrap();
+            assert!(split.next().is_none());
+            let current = cond_counter.current_mut().unwrap();
+            *current = !*current && !defines.contains_key(name);
+        }
     }
 }
 
@@ -125,14 +140,12 @@ mod utils {
             self.0.push(value);
         }
 
-        pub fn current(&self) -> bool {
-            self.0.last().copied().unwrap_or(true)
+        pub fn current(&self) -> Option<bool> {
+            self.0.last().copied()
         }
 
-        pub fn swap_current(&mut self) {
-            if let Some(top) = self.0.last_mut() {
-                *top = !*top;
-            }
+        pub fn current_mut(&mut self) -> Option<&mut bool> {
+            self.0.last_mut()
         }
 
         pub fn pop(&mut self) -> Option<bool> {
