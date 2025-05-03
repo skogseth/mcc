@@ -39,9 +39,36 @@ enum Directive {
     Undef,
 
     // Conditionals
+    // If,
+    // Elif,
+    Else,
+    Endif,
+
+    // Macro conditionals
     Ifdef,
     Ifndef,
-    Endif,
+    // Elifdef
+    // Elifndef
+}
+
+impl FromStr for Directive {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "define" => Ok(Self::Define),
+            "undef" => Ok(Self::Undef),
+
+            // "if" => Ok(Self::If),
+            // "elif" => Ok(Self::Elif),
+            "else" => Ok(Self::Else),
+            "endif" => Ok(Self::Endif),
+
+            "ifdef" => Ok(Self::Ifdef),
+            "ifndef" => Ok(Self::Ifndef),
+
+            _ => Err(format!("unknown preprocessor directive: {s}")),
+        }
+    }
 }
 
 fn handle_directive<'a>(
@@ -65,6 +92,16 @@ fn handle_directive<'a>(
             assert!(split.next().is_none());
             defines.remove(name).unwrap();
         }
+
+        Directive::Else => {
+            assert!(split.next().is_none());
+            cond_counter.swap_current();
+        }
+        Directive::Endif => {
+            assert!(split.next().is_none());
+            cond_counter.pop().unwrap();
+        }
+
         Directive::Ifdef => {
             let name = split.next().unwrap();
             assert!(split.next().is_none());
@@ -74,24 +111,6 @@ fn handle_directive<'a>(
             let name = split.next().unwrap();
             assert!(split.next().is_none());
             cond_counter.push(!defines.contains_key(name));
-        }
-        Directive::Endif => {
-            assert!(split.next().is_none());
-            cond_counter.pop().unwrap();
-        }
-    }
-}
-
-impl FromStr for Directive {
-    type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "define" => Ok(Self::Define),
-            "undef" => Ok(Self::Undef),
-            "ifdef" => Ok(Self::Ifdef),
-            "ifndef" => Ok(Self::Ifndef),
-            "endif" => Ok(Self::Endif),
-            _ => Err(format!("unknown preprocessor directive: {s}")),
         }
     }
 }
@@ -108,6 +127,12 @@ mod utils {
 
         pub fn current(&self) -> bool {
             self.0.last().copied().unwrap_or(true)
+        }
+
+        pub fn swap_current(&mut self) {
+            if let Some(top) = self.0.last_mut() {
+                *top = !*top;
+            }
         }
 
         pub fn pop(&mut self) -> Option<bool> {

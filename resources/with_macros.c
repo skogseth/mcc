@@ -1,4 +1,4 @@
-#define VALUE 3 * 1
+#define VALUE 3 * 2
 
 int main(void) {
 #ifdef PIZZA
@@ -6,12 +6,10 @@ int main(void) {
 #endif
   
 #ifndef VALUE
-  return 30;
+  int a = 2;
+#else
+  int a = 10;
 #endif
   
-#ifdef VALUE
-  return 100;
-#endif
-  
-  return VALUE;
+  return a * VALUE;
 }
