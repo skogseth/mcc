@@ -1,9 +1,6 @@
 use std::collections::BTreeMap;
 use std::str::FromStr;
 
-#[derive(Debug, Clone)]
-pub struct Error;
-
 pub fn main(input: &str) -> String {
     let mut defines: BTreeMap<&str, &str> = BTreeMap::new();
     let mut cond_counter = CondCounter::default();
