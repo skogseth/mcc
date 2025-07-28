@@ -1,9 +1,14 @@
+[workspace]
+members = ["preprocessor"]
+
 [package]
 name = "mcc"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+mcc-preprocessor = { path = "./preprocessor" }
+
 anyhow = { version = "1.0.95", features = ["backtrace"] }
 clap = { version = "4.5.23", features = ["derive"] }
 console = "0.15.10"

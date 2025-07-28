@@ -184,7 +184,7 @@ pub fn compiler(
             anyhow!("failed to lex file")
         })?;
     if options.lex {
-        println!("{tokens:?}");
+        println!("{tokens:#?}");
         return Ok(false);
     }
 
@@ -220,4 +220,13 @@ pub fn compiler(
     std::fs::write(output_path, &buf[..]).context("failed to write to output file")?;
 
     Ok(true)
+}
+
+pub fn preprocessor(input: &Path, output: &Path) -> Result<(), anyhow::Error> {
+    let input_content =
+        std::fs::read_to_string(input).context("failed to read input file for preprocessor")?;
+    let output_content = mcc_preprocessor::main(&input_content);
+    std::fs::write(output, output_content.as_bytes())
+        .context("failed to write preprocessor output to file")?;
+    Ok(())
 }
