@@ -54,6 +54,9 @@ enum Directive {
     // Output
     Error,
     Warning,
+
+    // The special one
+    Pragma,
 }
 
 impl FromStr for Directive {
@@ -75,6 +78,8 @@ impl FromStr for Directive {
 
             "error" => Ok(Self::Error),
             "warning" => Ok(Self::Warning),
+
+            "pragma" => Ok(Self::Pragma),
 
             _ => Err(format!("unknown preprocessor directive: {s}")),
         }
@@ -146,6 +151,8 @@ fn handle_directive<'a>(
                 eprintln!("{rest}");
             }
         }
+
+        Directive::Pragma => { /* We currently don't support any pragmas */ }
     }
 }
 
