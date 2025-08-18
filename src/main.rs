@@ -14,7 +14,7 @@ struct Cli {
     #[clap(flatten)]
     options: Options,
 
-    #[clap(short, long, default_value_t = Preprocessor::Mcc)]
+    #[clap(short, long, default_value_t = Preprocessor::Gcc)]
     preprocessor: Preprocessor,
 
     #[clap(long)]

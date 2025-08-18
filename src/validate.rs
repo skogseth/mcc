@@ -1,6 +1,6 @@
 use crate::Identifier;
 use crate::Output;
-use crate::parser as p;
+use crate::ast;
 
 use variable_map::VariableMap;
 mod variable_map {
@@ -54,14 +54,17 @@ mod variable_map {
 #[derive(Debug, Clone)]
 pub struct ValidationError;
 
-pub fn resolve_variables(program: &mut p::Program, output: &Output) -> Result<(), ValidationError> {
+pub fn resolve_variables(
+    program: &mut ast::Program,
+    output: &Output,
+) -> Result<(), ValidationError> {
     let mut vars = VariableMap::new();
-    let main: &mut p::Function = &mut program.0;
+    let main: &mut ast::Function = &mut program.0;
     resolve_block(&mut main.body, &mut vars, output)
 }
 
 fn resolve_block(
-    block: &mut p::Block,
+    block: &mut ast::Block,
     variable_map: &mut VariableMap,
     output: &Output,
 ) -> Result<(), ValidationError> {
@@ -69,8 +72,8 @@ fn resolve_block(
         .0
         .iter_mut()
         .map(|block_item| match block_item {
-            p::BlockItem::D(d) => resolve_decleration(d, variable_map, output),
-            p::BlockItem::S(s) => resolve_statement(s, variable_map, output),
+            ast::BlockItem::D(d) => resolve_decleration(d, variable_map, output),
+            ast::BlockItem::S(s) => resolve_statement(s, variable_map, output),
         })
         .filter_map(Result::err)
         .collect::<Vec<ValidationError>>();
@@ -83,7 +86,7 @@ fn resolve_block(
 }
 
 fn resolve_decleration(
-    decleration: &mut p::Declaration,
+    decleration: &mut ast::Declaration,
     variable_map: &mut VariableMap,
     output: &Output,
 ) -> Result<(), ValidationError> {
@@ -110,15 +113,15 @@ fn resolve_decleration(
 }
 
 fn resolve_statement(
-    statement: &mut p::Statement,
+    statement: &mut ast::Statement,
     variable_map: &mut VariableMap,
     output: &Output,
 ) -> Result<(), ValidationError> {
     match statement {
-        p::Statement::Return(expr) => resolve_expression(expr, variable_map, output),
-        p::Statement::Expression(expr) => resolve_expression(expr, variable_map, output),
+        ast::Statement::Return(expr) => resolve_expression(expr, variable_map, output),
+        ast::Statement::Expression(expr) => resolve_expression(expr, variable_map, output),
 
-        p::Statement::If { cond, then, else_ } => {
+        ast::Statement::If { cond, then, else_ } => {
             resolve_expression(cond, variable_map, output)?;
             resolve_statement(then, variable_map, output)?;
 
@@ -129,21 +132,21 @@ fn resolve_statement(
             Ok(())
         }
 
-        p::Statement::Compound(block) => {
+        ast::Statement::Compound(block) => {
             // Create new map wrapping the current one
             let mut variable_map = variable_map.wrap();
             resolve_block(block, &mut variable_map, output)
         }
 
-        p::Statement::Break(_) | p::Statement::Continue(_) => Ok(()), // nothing to do
+        ast::Statement::Break(_) | ast::Statement::Continue(_) => Ok(()), // nothing to do
 
-        p::Statement::While { cond, body, .. } | p::Statement::DoWhile { body, cond, .. } => {
+        ast::Statement::While { cond, body, .. } | ast::Statement::DoWhile { body, cond, .. } => {
             resolve_expression(cond, variable_map, output)?;
             resolve_statement(body, variable_map, output)?;
             Ok(())
         }
 
-        p::Statement::For {
+        ast::Statement::For {
             init,
             cond,
             post,
@@ -155,9 +158,9 @@ fn resolve_statement(
 
             // Resolve ForInit
             match init {
-                p::ForInit::D(decl) => resolve_decleration(decl, &mut variable_map, output)?,
-                p::ForInit::E(Some(expr)) => resolve_expression(expr, &mut variable_map, output)?,
-                p::ForInit::E(None) => {} // nothing to do
+                ast::ForInit::D(decl) => resolve_decleration(decl, &mut variable_map, output)?,
+                ast::ForInit::E(Some(expr)) => resolve_expression(expr, &mut variable_map, output)?,
+                ast::ForInit::E(None) => {} // nothing to do
             }
 
             if let Some(cond) = cond {
@@ -173,18 +176,18 @@ fn resolve_statement(
             Ok(())
         }
 
-        p::Statement::Null => Ok(()), // nothing to do
+        ast::Statement::Null => Ok(()), // nothing to do
     }
 }
 
 fn resolve_expression(
-    expression: &mut p::Expression,
+    expression: &mut ast::Expression,
     variable_map: &mut VariableMap,
     output: &Output,
 ) -> Result<(), ValidationError> {
     match expression {
-        p::Expression::Assignment(left, right) => {
-            if !matches!(&**left, p::Expression::Var(_)) {
+        ast::Expression::Assignment(left, right) => {
+            if !matches!(&**left, ast::Expression::Var(_)) {
                 // TODO: Output proper error message here
                 // NOTE: This is blocked by multi-line span
                 eprintln!("invalid lvalue encountered");
@@ -196,7 +199,7 @@ fn resolve_expression(
             result_left.and(result_right)
         }
 
-        p::Expression::Var(variable) => {
+        ast::Expression::Var(variable) => {
             let unique_name = variable_map.get(&variable.name).ok_or_else(|| {
                 output.error(variable.span, String::from("undeclared variable"));
                 ValidationError
@@ -205,17 +208,17 @@ fn resolve_expression(
             Ok(())
         }
 
-        p::Expression::Unary(_, expr) => resolve_expression(expr, variable_map, output),
+        ast::Expression::Unary(_, expr) => resolve_expression(expr, variable_map, output),
 
-        p::Expression::Binary(_, left, right) => {
+        ast::Expression::Binary(_, left, right) => {
             let result_left = resolve_expression(left, variable_map, output);
             let result_right = resolve_expression(right, variable_map, output);
             result_left.and(result_right)
         }
 
-        p::Expression::Constant(_) => Ok(()), // nothing to do
+        ast::Expression::Constant(_) => Ok(()), // nothing to do
 
-        p::Expression::Conditional {
+        ast::Expression::Conditional {
             cond,
             if_true,
             if_false,
@@ -228,20 +231,20 @@ fn resolve_expression(
     }
 }
 
-pub fn resolve_loops(program: &mut p::Program, output: &Output) -> Result<(), ValidationError> {
-    let main: &mut p::Function = &mut program.0;
+pub fn resolve_loops(program: &mut ast::Program, output: &Output) -> Result<(), ValidationError> {
+    let main: &mut ast::Function = &mut program.0;
     resolve_loops_block(&mut main.body, None, output)
 }
 
 fn resolve_loops_block(
-    block: &mut p::Block,
+    block: &mut ast::Block,
     current_loop: Option<Identifier>,
     output: &Output,
 ) -> Result<(), ValidationError> {
     for block_item in &mut block.0 {
         match block_item {
-            p::BlockItem::S(s) => resolve_loops_statement(s, current_loop.clone(), output)?,
-            p::BlockItem::D(_) => {} // nothing to do
+            ast::BlockItem::S(s) => resolve_loops_statement(s, current_loop.clone(), output)?,
+            ast::BlockItem::D(_) => {} // nothing to do
         }
     }
 
@@ -249,27 +252,27 @@ fn resolve_loops_block(
 }
 
 fn resolve_loops_statement(
-    statement: &mut p::Statement,
+    statement: &mut ast::Statement,
     current_loop: Option<Identifier>,
     output: &Output,
 ) -> Result<(), ValidationError> {
     match statement {
-        p::Statement::Break(label) | p::Statement::Continue(label) => {
+        ast::Statement::Break(label) | ast::Statement::Continue(label) => {
             // TODO: Return proper errors here
             *label = Some(current_loop.unwrap());
             Ok(())
         }
 
         #[rustfmt::skip]
-        p::Statement::While { cond: _, body, label }
-        | p::Statement::DoWhile { body, cond: _, label }
-        | p::Statement::For { init: _, cond: _, post: _, body, label } => {
+        ast::Statement::While { cond: _, body, label }
+        | ast::Statement::DoWhile { body, cond: _, label }
+        | ast::Statement::For { init: _, cond: _, post: _, body, label } => {
             // We here pass in the label of the loop!
             resolve_loops_statement(body, Some(label.clone()), output)
         }
 
         #[rustfmt::skip]
-        p::Statement::If { cond: _, then, else_ } => {
+        ast::Statement::If { cond: _, then, else_ } => {
             resolve_loops_statement(then, current_loop.clone(), output)?;
 
             if let Some(else_) = else_ {
@@ -279,8 +282,8 @@ fn resolve_loops_statement(
             Ok(())
         }
 
-        p::Statement::Compound(block) => resolve_loops_block(block, current_loop, output),
+        ast::Statement::Compound(block) => resolve_loops_block(block, current_loop, output),
 
-        p::Statement::Return(_) | p::Statement::Expression(_) | p::Statement::Null => Ok(()), // nothing to do
+        ast::Statement::Return(_) | ast::Statement::Expression(_) | ast::Statement::Null => Ok(()), // nothing to do
     }
 }

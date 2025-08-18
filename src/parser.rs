@@ -1,6 +1,7 @@
 use std::iter::Peekable;
 use std::vec::IntoIter;
 
+use crate::ast::*;
 use crate::identifier::Identifier;
 use crate::lexer::{Keyword, Operator, Punct, Token, TokenElem};
 use crate::{Output, Span};
@@ -59,19 +60,10 @@ fn take_operator(
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Program(pub Function);
-
 impl Program {
     pub fn emit_tacky(self) -> crate::tacky::Program {
         crate::tacky::Program(self.0.emit_tacky())
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct Function {
-    pub name: Identifier,
-    pub body: Block,
 }
 
 impl Function {
@@ -129,9 +121,6 @@ impl Function {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Block(pub Vec<BlockItem>);
-
 impl Block {
     fn parse(tokens: &mut TokenIter, output: &Output) -> Result<Self, ParseError> {
         take_punct(tokens, Punct::OpenBrace, output)?;
@@ -166,12 +155,6 @@ impl Block {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum BlockItem {
-    S(Statement),
-    D(Declaration),
-}
-
 impl BlockItem {
     fn parse(tokens: &mut TokenIter, output: &Output) -> Result<Self, ParseError> {
         let token_elem = tokens.peek().ok_or(ParseError::EarlyEnd("block item"))?;
@@ -187,13 +170,6 @@ impl BlockItem {
             Self::D(decleration) => decleration.emit_tacky(instructions),
         }
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct Declaration {
-    pub name: Identifier,
-    pub name_span: Span,
-    pub init: Option<Expression>,
 }
 
 impl Declaration {
@@ -251,12 +227,6 @@ impl Declaration {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum ForInit {
-    D(Declaration),
-    E(Option<Expression>),
-}
-
 impl ForInit {
     fn parse(tokens: &mut TokenIter, output: &Output) -> Result<Self, ParseError> {
         let token_elem = tokens.peek().ok_or(ParseError::EarlyEnd("block item"))?;
@@ -274,38 +244,6 @@ impl ForInit {
             }
         }
     }
-}
-
-#[derive(Debug, Clone)]
-pub enum Statement {
-    Return(Expression),
-    Expression(Expression),
-    If {
-        cond: Expression,
-        then: Box<Statement>,
-        else_: Option<Box<Statement>>,
-    },
-    Compound(Block),
-    Break(Option<Identifier>),
-    Continue(Option<Identifier>),
-    While {
-        cond: Expression,
-        body: Box<Statement>,
-        label: Identifier,
-    },
-    DoWhile {
-        body: Box<Statement>,
-        cond: Expression,
-        label: Identifier,
-    },
-    For {
-        init: ForInit,
-        cond: Option<Expression>,
-        post: Option<Expression>,
-        body: Box<Statement>,
-        label: Identifier,
-    },
-    Null,
 }
 
 fn take_expr(tokens: &mut TokenIter, output: &Output) -> Result<Expression, ParseError> {
@@ -599,26 +537,6 @@ impl Statement {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Variable {
-    pub name: Identifier,
-    pub span: Span,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Expression {
-    Constant(i64),
-    Var(Variable),
-    Unary(UnaryOperator, Box<Expression>),
-    Binary(BinaryOperator, Box<Expression>, Box<Expression>),
-    Assignment(Box<Expression>, Box<Expression>),
-    Conditional {
-        cond: Box<Expression>,
-        if_true: Box<Expression>,
-        if_false: Box<Expression>,
-    },
-}
-
 impl Expression {
     fn parse(tokens: &mut TokenIter, output: &Output) -> Result<Self, ParseError> {
         Self::parse_expr(tokens, 0, output)
@@ -875,51 +793,6 @@ impl Expression {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UnaryOperator {
-    Complement,
-    Negate,
-    Not,
-}
-
-impl std::fmt::Display for UnaryOperator {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Complement => f.write_str("~"),
-            Self::Negate => f.write_str("-"),
-            Self::Not => f.write_str("!"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BinaryOperator {
-    // Special
-    Assignment,
-
-    // Arithmetic
-    Add,
-    Subtract,
-    Multiply,
-    Divide,
-    Remainder,
-
-    // Logical
-    And,
-    Or,
-
-    // Equality
-    Equal,
-    NotEqual,
-    LessThan,
-    LessOrEqual,
-    GreaterThan,
-    GreaterOrEqual,
-
-    // Conditional
-    QuestionMark,
-}
-
 impl BinaryOperator {
     fn parse(token: &Token) -> Option<Self> {
         match token {
@@ -962,28 +835,6 @@ impl BinaryOperator {
             Self::Or => 5,
             Self::QuestionMark => 3,
             Self::Assignment => 1,
-        }
-    }
-}
-
-impl std::fmt::Display for BinaryOperator {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Assignment => f.write_str("="),
-            Self::Add => f.write_str("+"),
-            Self::Subtract => f.write_str("-"),
-            Self::Multiply => f.write_str("*"),
-            Self::Divide => f.write_str("/"),
-            Self::Remainder => f.write_str("%"),
-            Self::And => f.write_str("&&"),
-            Self::Or => f.write_str("||"),
-            Self::Equal => f.write_str("=="),
-            Self::NotEqual => f.write_str("!="),
-            Self::LessThan => f.write_str("<"),
-            Self::LessOrEqual => f.write_str("<="),
-            Self::GreaterThan => f.write_str(">"),
-            Self::GreaterOrEqual => f.write_str(">="),
-            Self::QuestionMark => f.write_str("?"),
         }
     }
 }

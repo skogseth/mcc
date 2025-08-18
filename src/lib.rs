@@ -5,6 +5,7 @@ use clap::Args;
 use thiserror::Error;
 
 mod assembly;
+mod ast;
 mod identifier;
 mod lexer;
 mod parser;
