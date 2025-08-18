@@ -38,29 +38,15 @@ pub fn main(input: &str) -> String {
 }
 
 /// The goals of this function is to (eventually):
-/// 1. Replace all line splits, either `\n` or `\r\n`, with `\n`
+/// 1. Replace all "carriage-style" line splits (`\r\n`) with normal line splits (`\n`)
 /// 2. Merge "continued lines" (lines that end with a `\`)
 /// 3. Replace all comments with single spaces
 fn initial_processing(s: &str) -> String {
-    // Step 1 (TODO: Horribly inefficient, probably)
-    let s: String = s.lines().collect::<Vec<&str>>().join("\n");
+    // Step 1
+    let s: String = s.replace("\r\n", "\n");
 
     // Step 2
-    let s: String = {
-        let mut chars = s.chars().peekable();
-        let mut s = String::new();
-
-        while let Some(c) = chars.next() {
-            match c {
-                '\\' if chars.next_if(|c| *c == '\n').is_some() => {
-                    // Don't add either of the characters to the string
-                }
-                _ => s.push(c),
-            }
-        }
-
-        s
-    };
+    let s: String = s.replace("\\\n", "");
 
     // Step 3
     let s: String = {
