@@ -14,7 +14,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - name: Build
-      run: cargo build
-    - name: Test
+    - name: Build (release)
+      run: cargo build --release
+    - name: Unit tests
       run: cargo test
+    - name: Integration tests
+      run: ./tests/writing-a-c-compiler-tests/test_compiler ./target/release/mcc --chapter 8
+        
