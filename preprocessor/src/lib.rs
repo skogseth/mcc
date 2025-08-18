@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 use std::str::FromStr;
 
 pub fn main(input: &str) -> String {
+    let input = initial_processing(input);
+
     let mut defines: BTreeMap<&str, &str> = BTreeMap::new();
     let mut cond_counter = CondCounter::default();
 
@@ -31,7 +33,76 @@ pub fn main(input: &str) -> String {
                 }
             }
         })
-        .collect()
+        .collect::<Vec<String>>()
+        .join("\n")
+}
+
+/// The goals of this function is to (eventually):
+/// 1. Replace all line splits, either `\n` or `\r\n`, with `\n`
+/// 2. Merge "continued lines" (lines that end with a `\`)
+/// 3. Replace all comments with single spaces
+fn initial_processing(s: &str) -> String {
+    // Step 1 (TODO: Horribly inefficient, probably)
+    let s: String = s.lines().collect::<Vec<&str>>().join("\n");
+
+    // Step 2
+    let s: String = {
+        let mut chars = s.chars().peekable();
+        let mut s = String::new();
+
+        while let Some(c) = chars.next() {
+            match c {
+                '\\' if chars.next_if(|c| *c == '\n').is_some() => {
+                    // Don't add either of the characters to the string
+                }
+                _ => s.push(c),
+            }
+        }
+
+        s
+    };
+
+    // Step 3
+    let s: String = {
+        let mut chars = s.chars().peekable();
+        let mut s = String::new();
+
+        while let Some(c) = chars.next() {
+            match c {
+                // If we encounter a string literal, we just read the entire thing
+                // (This is done to avoid processing comments in string literals)
+                // NOTE: This must happen after "continued lines" have been parsed!!
+                '\"' => {
+                    // Take characters until we find the end ...
+                    while let Some(next) = chars.next_if(|c| *c != '\"') {
+                        s.push(next);
+                    }
+
+                    // ... and then remember to get the end of the literal as well
+                    if let Some(next) = chars.next() {
+                        debug_assert_eq!(next, '\"');
+                        s.push(next);
+                    }
+                }
+
+                // This could be comment!
+                '/' => {
+                    if chars.next_if(|c| *c == '/').is_some() {
+                        // It's a comment! Read until the end of the line (and discard)
+                        while chars.next_if(|c| *c != '\n').is_some() {}
+                    }
+
+                    // TODO: Support block comments
+                }
+
+                _ => s.push(c),
+            }
+        }
+
+        s
+    };
+
+    s
 }
 
 enum Directive {
