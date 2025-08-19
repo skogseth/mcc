@@ -72,14 +72,22 @@ fn initial_processing(s: &str) -> String {
                 }
 
                 // This could be comment!
-                '/' => {
-                    if chars.next_if(|c| *c == '/').is_some() {
-                        // It's a comment! Read until the end of the line (and discard)
-                        while chars.next_if(|c| *c != '\n').is_some() {}
-                    }
+                '/' => match chars.next() {
+                    // It's a comment! Read until the end of the line (and discard)
+                    Some('/') => while chars.next_if(|c| *c != '\n').is_some() {},
 
-                    // TODO: Support block comments
-                }
+                    // It's a block-comment! Read until the next '*/' sequence
+                    Some('*') => todo!("support block comments"),
+
+                    // It's not a comment! First push the '/', then the character
+                    maybe_char => {
+                        s.push('/');
+
+                        if let Some(next) = maybe_char {
+                            s.push(next);
+                        }
+                    }
+                },
 
                 _ => s.push(c),
             }
