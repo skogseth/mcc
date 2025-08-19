@@ -51,7 +51,7 @@ fn initial_processing(s: &str) -> String {
     // Step 3
     let s: String = {
         let mut chars = s.chars().peekable();
-        let mut s = String::new();
+        let mut new = String::with_capacity(s.capacity());
 
         while let Some(c) = chars.next() {
             match c {
@@ -61,13 +61,13 @@ fn initial_processing(s: &str) -> String {
                 '\"' => {
                     // Take characters until we find the end ...
                     while let Some(next) = chars.next_if(|c| *c != '\"') {
-                        s.push(next);
+                        new.push(next);
                     }
 
                     // ... and then remember to get the end of the literal as well
                     if let Some(next) = chars.next() {
                         debug_assert_eq!(next, '\"');
-                        s.push(next);
+                        new.push(next);
                     }
                 }
 
@@ -77,23 +77,31 @@ fn initial_processing(s: &str) -> String {
                     Some('/') => while chars.next_if(|c| *c != '\n').is_some() {},
 
                     // It's a block-comment! Read until the next '*/' sequence
-                    Some('*') => todo!("support block comments"),
+                    Some('*') => {
+                        while let Some(c) = chars.next() {
+                            // Check for the end (lazy eval from boolean 'and' is important here)
+                            if c == '*' && chars.next().is_some_and(|c| c == '/') {
+                                // It is! Let's break out of the loop
+                                break;
+                            }
+                        }
+                    }
 
                     // It's not a comment! First push the '/', then the character
                     maybe_char => {
-                        s.push('/');
+                        new.push('/');
 
                         if let Some(next) = maybe_char {
-                            s.push(next);
+                            new.push(next);
                         }
                     }
                 },
 
-                _ => s.push(c),
+                _ => new.push(c),
             }
         }
 
-        s
+        new
     };
 
     s
