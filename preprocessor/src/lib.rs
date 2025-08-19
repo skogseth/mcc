@@ -50,38 +50,44 @@ fn initial_processing(s: &str) -> String {
 
     // Step 3
     let s: String = {
-        let mut chars = s.chars().peekable();
+        let mut chars = s.chars();
         let mut new = String::with_capacity(s.capacity());
 
-        while let Some(c) = chars.next() {
-            match c {
+        while let Some(current) = chars.next() {
+            match current {
                 // If we encounter a string literal, we just read the entire thing
                 // (This is done to avoid processing comments in string literals)
                 // NOTE: This must happen after "continued lines" have been parsed!!
                 '\"' => {
-                    // Take characters until we find the end ...
-                    while let Some(next) = chars.next_if(|c| *c != '\"') {
-                        new.push(next);
-                    }
+                    // NOTE: Remember to push the start of the literal
+                    new.push('\"');
 
-                    // ... and then remember to get the end of the literal as well
-                    if let Some(next) = chars.next() {
-                        debug_assert_eq!(next, '\"');
+                    while let Some(next) = chars.next() {
                         new.push(next);
+                        if next == '\"' {
+                            break;
+                        }
                     }
                 }
 
                 // This could be comment!
                 '/' => match chars.next() {
                     // It's a comment! Read until the end of the line (and discard)
-                    Some('/') => while chars.next_if(|c| *c != '\n').is_some() {},
+                    Some('/') => {
+                        while let Some(next) = chars.next() {
+                            if next == '\n' {
+                                // Should we push this here? Seems sensible to me
+                                new.push('\n');
+                                break;
+                            }
+                        }
+                    }
 
                     // It's a block-comment! Read until the next '*/' sequence
                     Some('*') => {
-                        while let Some(c) = chars.next() {
-                            // Check for the end (lazy eval from boolean 'and' is important here)
-                            if c == '*' && chars.next().is_some_and(|c| c == '/') {
-                                // It is! Let's break out of the loop
+                        while let Some(next) = chars.next() {
+                            // Check for the end (lazy eval from `&&` is important here)
+                            if next == '*' && chars.next().is_some_and(|c| c == '/') {
                                 break;
                             }
                         }
@@ -97,9 +103,11 @@ fn initial_processing(s: &str) -> String {
                     }
                 },
 
-                _ => new.push(c),
+                c => new.push(c),
             }
         }
+
+        new.shrink_to_fit();
 
         new
     };
@@ -273,5 +281,36 @@ mod utils {
         pub fn pop(&mut self) -> Option<CondState> {
             self.0.pop()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn comment_and_string_literals() {
+        const INPUT: &str = r#"
+        int main() {
+            /*
+                Ignore all these...
+                lines!
+
+            */
+            char *s1 = "Hello // world";
+            char *s2 = "This /* is */ not a // comment";
+            // But this sure is!!!
+        }
+        "#;
+        const OUTPUT: &str = r#"
+        int main() {
+            
+            char *s1 = "Hello // world";
+            char *s2 = "This /* is */ not a // comment";
+            
+        }
+        "#;
+
+        assert_eq!(initial_processing(INPUT), OUTPUT);
     }
 }

@@ -22,7 +22,7 @@ jobs:
       run: cargo build --release
 
     - name: Unit tests
-      run: cargo test
+      run: cargo test --workspace
 
     - name: Integration tests
       run: ./tests/writing-a-c-compiler-tests/test_compiler ./target/release/mcc --chapter 8
